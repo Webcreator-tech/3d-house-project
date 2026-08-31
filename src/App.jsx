@@ -211,7 +211,12 @@ function SofaModel({ ghost = false }) {
   return (
     <group>
       {/* Seat */}
-      <mesh position={[0, 0.65, 0]} material={material} castShadow={!ghost}>
+      <mesh
+        position={[0, 0.65, 0]}
+        material={material}
+        castShadow={!ghost}
+        raycast={ghost ? () => null : undefined}
+      >
         <boxGeometry args={[3.2, 0.7, 1.35]} />
       </mesh>
 
@@ -220,6 +225,7 @@ function SofaModel({ ghost = false }) {
         position={[0, 1.45, -0.52]}
         material={material}
         castShadow={!ghost}
+        raycast={ghost ? () => null : undefined}
       >
         <boxGeometry args={[3.2, 1.35, 0.35]} />
       </mesh>
@@ -229,6 +235,7 @@ function SofaModel({ ghost = false }) {
         position={[-1.48, 1.0, 0]}
         material={material}
         castShadow={!ghost}
+        raycast={ghost ? () => null : undefined}
       >
         <boxGeometry args={[0.3, 0.85, 1.4]} />
       </mesh>
@@ -238,6 +245,7 @@ function SofaModel({ ghost = false }) {
         position={[1.48, 1.0, 0]}
         material={material}
         castShadow={!ghost}
+        raycast={ghost ? () => null : undefined}
       >
         <boxGeometry args={[0.3, 0.85, 1.4]} />
       </mesh>
@@ -254,6 +262,7 @@ function SofaModel({ ghost = false }) {
           position={pos}
           material={darkMaterial}
           castShadow={!ghost}
+          raycast={ghost ? () => null : undefined}
         >
           <boxGeometry args={[0.16, 0.5, 0.16]} />
         </mesh>
@@ -278,6 +287,7 @@ function PlacementPreview({ active, position }) {
       <mesh
         position={[0, 0.025, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
+        raycast={() => null}
       >
         <ringGeometry args={[1.75, 1.95, 48]} />
         <meshBasicMaterial
@@ -292,6 +302,7 @@ function PlacementPreview({ active, position }) {
       <mesh
         position={[0, 0.02, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
+        raycast={() => null}
       >
         <circleGeometry args={[0.2, 24]} />
         <meshBasicMaterial
@@ -316,7 +327,7 @@ function PlacementSurface({ active, onMove }) {
     event.stopPropagation();
     if (!event.point) return;
 
-    // Clamp coordinates to interior boundary
+    // Clamp coordinates strictly to interior floor boundary
     const x = THREE.MathUtils.clamp(
       event.point.x,
       -BOUNDS.HALF_WIDTH,
@@ -338,7 +349,9 @@ function PlacementSurface({ active, onMove }) {
       onPointerMove={handlePointer}
       onPointerDown={handlePointer}
     >
-      <planeGeometry args={[60, 60]} />
+      <planeGeometry
+        args={[BOUNDS.HALF_WIDTH * 2, BOUNDS.HALF_LENGTH * 2]}
+      />
       <meshBasicMaterial visible={false} />
     </mesh>
   );
@@ -831,6 +844,9 @@ export default function App() {
           className="editor-toolbar"
           onPointerDown={(e) => e.stopPropagation()}
           onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onPointerEnter={(e) => e.stopPropagation()}
+          onPointerLeave={(e) => e.stopPropagation()}
         >
           {!placementMode && (
             <>

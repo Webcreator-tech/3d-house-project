@@ -1,12 +1,13 @@
 import React, {
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas } from "@react-three/fiber";
 
 import {
   Environment,
@@ -20,65 +21,177 @@ import * as THREE from "three";
 
 import "./App.css";
 
-
 /* =========================================================
-   HOUSE
+   CONSTANTS & BOUNDS
+   House is 32 × 36 ft (~9.75 × 10.97 m).
+   Centered coordinates: X in [-4.87, 4.87], Z in [-5.48, 5.48].
+   Interior usable bounds for furniture placement:
 ========================================================= */
 
-function HouseModel() {
+const BOUNDS = {
+  HALF_WIDTH: 3.9,
+  HALF_LENGTH: 4.5,
+};
+
+const WALL_PALETTE = [
+  { name: "Pure White", color: "#FFFFFF" },
+  { name: "Off White", color: "#F3F4F6" },
+  { name: "Warm Alabaster", color: "#FBF7EE" },
+  { name: "Soft Greige", color: "#D5CFC4" },
+  { name: "Muted Slate", color: "#94A3B8" },
+  { name: "Charcoal", color: "#475569" },
+  { name: "Midnight Navy", color: "#1E293B" },
+  { name: "Sage Green", color: "#849974" },
+  { name: "Forest Green", color: "#3F5E4D" },
+  { name: "Dusty Rose", color: "#C48B9F" },
+  { name: "Terracotta", color: "#B45309" },
+  { name: "Sky Blue", color: "#93C5FD" },
+];
+
+/* Helper to identify customizable wall meshes vs doors/windows/lintels/floors */
+function isEditableWall(name) {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  // Filter out non-customizable targets: lintels, floors, texts, camera
+  if (
+    n.includes("lintel") ||
+    n.includes("floor") ||
+    n.includes("text") ||
+    n.includes("cam")
+  ) {
+    return false;
+  }
+  return n.startsWith("div_") || n.startsWith("wrap_") || n.startsWith("ext_");
+}
+
+/* Helper to convert mesh names into clean human-readable labels */
+function formatWallName(name) {
+  if (!name) return "Wall";
+  const nameMap = {
+    Div_H_Kit_Toilet: "Kitchen / Toilet Partition",
+    Div_H_Right_Bed: "Bedroom Partition Wall",
+    Div_H_Right_Hall: "Living Hall Partition",
+    Div_V_Bot_Hall: "Hallway Inner Wall",
+    Div_V_Bot_Kit: "Kitchen Inner Wall",
+    Div_V_Top_Bed: "Bedroom Divider 1",
+    Div_V_Top_Bed_2: "Bedroom Divider 2",
+    Div_V_Top_Toilet: "Toilet Partition Wall",
+    Ext_Bot_HallSide: "Exterior South Wall (Hall)",
+    Ext_Bot_KitSide: "Exterior South Wall (Kitchen)",
+    Ext_Left: "Exterior West Wall",
+    Ext_Right: "Exterior East Wall",
+    Ext_Top: "Exterior North Wall",
+    Wrap_Bed_Right: "Bedroom East Wall",
+    Wrap_Bed_Top: "Bedroom North Wall",
+    Wrap_Hall_Bot1: "Living Room South Wall 1",
+    Wrap_Hall_Bot2: "Living Room South Wall 2",
+    Wrap_Hall_Right: "Living Room East Wall",
+    Wrap_Kit_Bot: "Kitchen South Wall",
+    Wrap_Kit_Left: "Kitchen West Wall",
+  };
+  return nameMap[name] || name.replace(/_/g, " ");
+}
+
+/* =========================================================
+   HOUSE MODEL COMPONENT
+========================================================= */
+
+function HouseModel({
+  wallColors,
+  selectedWall,
+  onSelectWall,
+  placementMode,
+}) {
   const { scene } = useGLTF("/models/house.glb");
 
-  const model = useMemo(() => {
+  const { model, wallMeshes } = useMemo(() => {
     const cloned = scene.clone(true);
 
     const box = new THREE.Box3().setFromObject(cloned);
     const center = box.getCenter(new THREE.Vector3());
 
-    cloned.position.set(
-      -center.x,
-      -box.min.y,
-      -center.z
-    );
+    cloned.position.set(-center.x, -box.min.y, -center.z);
+
+    const meshes = {};
 
     cloned.traverse((child) => {
       if (!child.isMesh) return;
 
       child.castShadow = true;
       child.receiveShadow = true;
-
       child.userData.housePart = true;
 
-      const name =
-        child.name?.toLowerCase() || "";
-
-      if (
-        name.includes("wrap_") ||
-        name.includes("div_")
-      ) {
+      const name = child.name || "";
+      if (isEditableWall(name)) {
         child.userData.editableWall = true;
+        // Clone material per mesh so each wall surface has an independent material instance
+        if (child.material) {
+          child.material = child.material.clone();
+          child.userData.initialColor = child.material.color.clone();
+        }
+        meshes[name] = child;
+      } else {
+        child.userData.editableWall = false;
       }
     });
 
-    return cloned;
+    return { model: cloned, wallMeshes: meshes };
   }, [scene]);
 
-  return <primitive object={model} />;
+  // Sync wall colors and selection highlights
+  useEffect(() => {
+    Object.entries(wallMeshes).forEach(([name, mesh]) => {
+      if (!mesh || !mesh.material) return;
+
+      // Apply custom or default color
+      if (wallColors[name]) {
+        mesh.material.color.set(wallColors[name]);
+      } else if (mesh.userData.initialColor) {
+        mesh.material.color.copy(mesh.userData.initialColor);
+      }
+
+      // Visual highlight for selected wall
+      if (selectedWall === name) {
+        mesh.material.emissive = new THREE.Color("#38bdf8");
+        mesh.material.emissiveIntensity = 0.35;
+      } else {
+        mesh.material.emissive = new THREE.Color(0, 0, 0);
+        mesh.material.emissiveIntensity = 0;
+      }
+    });
+  }, [wallColors, selectedWall, wallMeshes]);
+
+  const handlePointerDown = (event) => {
+    if (placementMode) return;
+
+    let target = event.object;
+    if (target && target.userData?.editableWall) {
+      event.stopPropagation();
+      onSelectWall(target.name);
+    }
+  };
+
+  return (
+    <primitive
+      object={model}
+      onPointerDown={handlePointerDown}
+    />
+  );
 }
 
 useGLTF.preload("/models/house.glb");
 
-
 /* =========================================================
-   TEMPORARY SOFA
+   TEMPORARY SOFA PROCEDURAL GEOMETRY
 ========================================================= */
 
 function SofaModel({ ghost = false }) {
   const material = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: "#6b7280",
+        color: ghost ? "#38bdf8" : "#6b7280",
         transparent: ghost,
-        opacity: ghost ? 0.32 : 1,
+        opacity: ghost ? 0.45 : 1,
         roughness: 0.8,
       }),
     [ghost]
@@ -87,9 +200,9 @@ function SofaModel({ ghost = false }) {
   const darkMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: "#374151",
+        color: ghost ? "#0284c7" : "#374151",
         transparent: ghost,
-        opacity: ghost ? 0.28 : 1,
+        opacity: ghost ? 0.4 : 1,
         roughness: 0.85,
       }),
     [ghost]
@@ -97,13 +210,8 @@ function SofaModel({ ghost = false }) {
 
   return (
     <group>
-
       {/* Seat */}
-      <mesh
-        position={[0, 0.65, 0]}
-        material={material}
-        castShadow
-      >
+      <mesh position={[0, 0.65, 0]} material={material} castShadow={!ghost}>
         <boxGeometry args={[3.2, 0.7, 1.35]} />
       </mesh>
 
@@ -111,7 +219,7 @@ function SofaModel({ ghost = false }) {
       <mesh
         position={[0, 1.45, -0.52]}
         material={material}
-        castShadow
+        castShadow={!ghost}
       >
         <boxGeometry args={[3.2, 1.35, 0.35]} />
       </mesh>
@@ -120,7 +228,7 @@ function SofaModel({ ghost = false }) {
       <mesh
         position={[-1.48, 1.0, 0]}
         material={material}
-        castShadow
+        castShadow={!ghost}
       >
         <boxGeometry args={[0.3, 0.85, 1.4]} />
       </mesh>
@@ -129,7 +237,7 @@ function SofaModel({ ghost = false }) {
       <mesh
         position={[1.48, 1.0, 0]}
         material={material}
-        castShadow
+        castShadow={!ghost}
       >
         <boxGeometry args={[0.3, 0.85, 1.4]} />
       </mesh>
@@ -145,147 +253,99 @@ function SofaModel({ ghost = false }) {
           key={i}
           position={pos}
           material={darkMaterial}
-          castShadow
+          castShadow={!ghost}
         >
           <boxGeometry args={[0.16, 0.5, 0.16]} />
         </mesh>
       ))}
-
     </group>
   );
 }
 
+/* =========================================================
+   PLACEMENT PREVIEW (GHOST + GROUND RING)
+========================================================= */
+
+function PlacementPreview({ active, position }) {
+  if (!active) return null;
+
+  return (
+    <group position={position}>
+      {/* Ghost sofa */}
+      <SofaModel ghost />
+
+      {/* Floor guide ring */}
+      <mesh
+        position={[0, 0.025, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        <ringGeometry args={[1.75, 1.95, 48]} />
+        <meshBasicMaterial
+          color="#38bdf8"
+          transparent
+          opacity={0.85}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Subtle center spot */}
+      <mesh
+        position={[0, 0.02, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        <circleGeometry args={[0.2, 24]} />
+        <meshBasicMaterial
+          color="#38bdf8"
+          transparent
+          opacity={0.6}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
 
 /* =========================================================
-   INVISIBLE PLACEMENT FLOOR
+   PLACEMENT SURFACE (RAYCASTING FLOOR PLANE)
 ========================================================= */
 
 function PlacementSurface({ active, onMove }) {
-  const { camera, gl } = useThree();
+  if (!active) return null;
 
-  const raycaster = useMemo(
-    () => new THREE.Raycaster(),
-    []
-  );
+  const handlePointer = (event) => {
+    event.stopPropagation();
+    if (!event.point) return;
 
-  const pointer = useMemo(
-    () => new THREE.Vector2(),
-    []
-  );
-
-  const plane = useMemo(
-    () =>
-      new THREE.Plane(
-        new THREE.Vector3(0, 1, 0),
-        0
-      ),
-    []
-  );
-
-  const hitPoint = useMemo(
-    () => new THREE.Vector3(),
-    []
-  );
-
-  useEffect(() => {
-    if (!active) return;
-
-    const canvas = gl.domElement;
-
-    const handlePointerMove = (event) => {
-      const rect =
-        canvas.getBoundingClientRect();
-
-      pointer.x =
-        ((event.clientX - rect.left) /
-          rect.width) *
-          2 -
-        1;
-
-      pointer.y =
-        -(
-          (event.clientY - rect.top) /
-            rect.height
-        ) *
-          2 +
-        1;
-
-      raycaster.setFromCamera(
-        pointer,
-        camera
-      );
-
-      /*
-       * Intersect directly with our
-       * mathematical floor plane.
-       *
-       * This means walls, sofa and
-       * house meshes cannot interfere.
-       */
-      const hit =
-        raycaster.ray.intersectPlane(
-          plane,
-          hitPoint
-        );
-
-      if (!hit) return;
-
-      /*
-       * House is 32 × 36 ft.
-       *
-       * Blender GLB dimensions are
-       * approximately 9.7536 × 10.9728 m.
-       *
-       * We use the model's centered
-       * coordinate system.
-       */
-
-      const HALF_WIDTH = 4.8768;
-      const HALF_LENGTH = 5.4864;
-
-      const x = THREE.MathUtils.clamp(
-        hitPoint.x,
-        -HALF_WIDTH,
-        HALF_WIDTH
-      );
-
-      const z = THREE.MathUtils.clamp(
-        hitPoint.z,
-        -HALF_LENGTH,
-        HALF_LENGTH
-      );
-
-      onMove([x, 0, z]);
-    };
-
-    canvas.addEventListener(
-      "pointermove",
-      handlePointerMove
+    // Clamp coordinates to interior boundary
+    const x = THREE.MathUtils.clamp(
+      event.point.x,
+      -BOUNDS.HALF_WIDTH,
+      BOUNDS.HALF_WIDTH
+    );
+    const z = THREE.MathUtils.clamp(
+      event.point.z,
+      -BOUNDS.HALF_LENGTH,
+      BOUNDS.HALF_LENGTH
     );
 
-    return () => {
-      canvas.removeEventListener(
-        "pointermove",
-        handlePointerMove
-      );
-    };
-  }, [
-    active,
-    camera,
-    gl,
-    onMove,
-    plane,
-    pointer,
-    raycaster,
-    hitPoint,
-  ]);
+    onMove([x, 0, z]);
+  };
 
-  return null;
+  return (
+    <mesh
+      position={[0, 0.01, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      onPointerMove={handlePointer}
+      onPointerDown={handlePointer}
+    >
+      <planeGeometry args={[60, 60]} />
+      <meshBasicMaterial visible={false} />
+    </mesh>
+  );
 }
 
-
 /* =========================================================
-   FURNITURE ITEM
+   FURNITURE ITEM (WITH PERSISTENT TRANSFORMS)
 ========================================================= */
 
 function FurnitureItem({
@@ -293,26 +353,90 @@ function FurnitureItem({
   selected,
   transformMode,
   onSelect,
-  onTransformStart,
-  onTransformEnd,
+  onUpdateTransform,
+  setCameraLocked,
+  orbitControlsRef,
 }) {
   const groupRef = useRef(null);
+  const transformRef = useRef(null);
+
+  // Sync Three.js transform with item props
+  useEffect(() => {
+    if (!groupRef.current) return;
+    groupRef.current.position.set(...item.position);
+    groupRef.current.rotation.set(...item.rotation);
+    groupRef.current.scale.set(...item.scale);
+  }, [item.position, item.rotation, item.scale]);
+
+  // Hook up TransformControls events and lock OrbitControls
+  useEffect(() => {
+    const controls = transformRef.current;
+    if (!controls) return;
+
+    const handleDraggingChanged = (event) => {
+      const isDragging = Boolean(event.value);
+      setCameraLocked(isDragging);
+
+      if (orbitControlsRef?.current) {
+        orbitControlsRef.current.enabled = !isDragging;
+      }
+
+      // When drag ends, persist the updated transform to React state
+      if (!isDragging && groupRef.current) {
+        const p = groupRef.current.position;
+        const r = groupRef.current.rotation;
+        const s = groupRef.current.scale;
+
+        onUpdateTransform(item.id, {
+          position: [p.x, p.y, p.z],
+          rotation: [r.x, r.y, r.z],
+          scale: [s.x, s.y, s.z],
+        });
+      }
+    };
+
+    const handleObjectChange = () => {
+      if (groupRef.current) {
+        const p = groupRef.current.position;
+        // Restrict furniture to interior bounds and floor level
+        p.x = THREE.MathUtils.clamp(
+          p.x,
+          -BOUNDS.HALF_WIDTH,
+          BOUNDS.HALF_WIDTH
+        );
+        p.z = THREE.MathUtils.clamp(
+          p.z,
+          -BOUNDS.HALF_LENGTH,
+          BOUNDS.HALF_LENGTH
+        );
+        p.y = Math.max(0, p.y);
+      }
+    };
+
+    controls.addEventListener("dragging-changed", handleDraggingChanged);
+    controls.addEventListener("objectChange", handleObjectChange);
+
+    return () => {
+      controls.removeEventListener(
+        "dragging-changed",
+        handleDraggingChanged
+      );
+      controls.removeEventListener(
+        "objectChange",
+        handleObjectChange
+      );
+    };
+  }, [item.id, onUpdateTransform, setCameraLocked, orbitControlsRef]);
 
   return (
     <>
       {selected && (
         <TransformControls
-          object={groupRef.current}
+          ref={transformRef}
+          object={groupRef}
           mode={transformMode}
           size={0.75}
-
-          onMouseDown={() => {
-            onTransformStart();
-          }}
-
-          onMouseUp={() => {
-            onTransformEnd();
-          }}
+          space="local"
         />
       )}
 
@@ -321,599 +445,485 @@ function FurnitureItem({
         position={item.position}
         rotation={item.rotation}
         scale={item.scale}
-
         onPointerDown={(event) => {
           event.stopPropagation();
           onSelect(item.id);
         }}
       >
-
-        {item.type === "sofa" && (
-          <SofaModel />
-        )}
-
+        {item.type === "sofa" && <SofaModel />}
       </group>
     </>
   );
 }
 
-
 /* =========================================================
-   PLACEMENT PREVIEW
-========================================================= */
-
-function PlacementPreview({
-  active,
-  position,
-}) {
-  if (!active) return null;
-
-  return (
-    <group position={position}>
-
-      {/* Ghost sofa */}
-      <SofaModel ghost />
-
-      {/* Ground ring */}
-      <mesh
-        position={[0, 0.025, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-      >
-        <ringGeometry
-          args={[1.75, 1.95, 48]}
-        />
-
-        <meshBasicMaterial
-          color="#38bdf8"
-          transparent
-          opacity={0.8}
-        />
-      </mesh>
-
-    </group>
-  );
-}
-
-
-/* =========================================================
-   LOADING
+   LOADING SCREEN
 ========================================================= */
 
 function LoadingScreen() {
   return (
     <Html center>
       <div className="loading-box">
-        Loading house...
+        <div className="loading-spinner" />
+        <span>Loading Architectural Scene...</span>
       </div>
     </Html>
   );
 }
 
-
 /* =========================================================
-   SCENE
+   SCENE CONTAINER
 ========================================================= */
 
 function Scene({
   furniture,
   selectedFurniture,
   setSelectedFurniture,
-
   transformMode,
-
   placementMode,
-
   previewPosition,
   setPreviewPosition,
-
   cameraLocked,
   setCameraLocked,
+  wallColors,
+  selectedWall,
+  setSelectedWall,
+  onUpdateFurnitureTransform,
 }) {
+  const orbitControlsRef = useRef(null);
+
   return (
     <Canvas
       shadows
-
       camera={{
         position: [18, 14, 18],
         fov: 45,
-        near: 0.01,
+        near: 0.1,
         far: 1000,
       }}
-
       gl={{
         antialias: true,
         logarithmicDepthBuffer: true,
       }}
-
       onPointerMissed={() => {
-        if (!placementMode) {
+        if (!placementMode && !cameraLocked) {
           setSelectedFurniture(null);
+          setSelectedWall(null);
         }
       }}
     >
+      <color attach="background" args={["#101318"]} />
 
-      <color
-        attach="background"
-        args={["#101318"]}
-      />
-
-      <ambientLight intensity={1.6} />
+      <ambientLight intensity={1.5} />
 
       <directionalLight
-        position={[10, 15, 20]}
-        intensity={3}
+        position={[12, 18, 20]}
+        intensity={2.8}
         castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-bias={-0.0001}
       />
 
       <directionalLight
-        position={[-10, 10, -10]}
-        intensity={1.4}
+        position={[-12, 10, -12]}
+        intensity={1.2}
       />
 
       <Suspense fallback={<LoadingScreen />}>
+        {/* House Model with Wall Customization */}
+        <HouseModel
+          wallColors={wallColors}
+          selectedWall={selectedWall}
+          onSelectWall={(name) => {
+            setSelectedWall(name);
+            setSelectedFurniture(null);
+          }}
+          placementMode={placementMode}
+        />
 
-        <HouseModel />
-
+        {/* Furniture Items */}
         {furniture.map((item) => (
           <FurnitureItem
             key={item.id}
             item={item}
-
-            selected={
-              selectedFurniture === item.id
-            }
-
-            transformMode={
-              transformMode
-            }
-
+            selected={selectedFurniture === item.id}
+            transformMode={transformMode}
             onSelect={(id) => {
               if (placementMode) return;
-
               setSelectedFurniture(id);
+              setSelectedWall(null);
             }}
-
-            onTransformStart={() => {
-              setCameraLocked(true);
-            }}
-
-            onTransformEnd={() => {
-              setCameraLocked(false);
-            }}
+            onUpdateTransform={onUpdateFurnitureTransform}
+            setCameraLocked={setCameraLocked}
+            orbitControlsRef={orbitControlsRef}
           />
         ))}
 
-        {/* Ghost */}
+        {/* Ghost Sofa Preview */}
         <PlacementPreview
           active={placementMode}
           position={previewPosition}
         />
 
-        {/* Invisible mathematical floor */}
+        {/* Floor Raycasting Plane */}
         <PlacementSurface
           active={placementMode}
           onMove={setPreviewPosition}
         />
 
         <Environment preset="city" />
-
       </Suspense>
 
-
-      {/* =================================================
-          360° CAMERA
-      ================================================= */}
-
+      {/* 360° OrbitControls */}
       <OrbitControls
-        enabled={
-          !cameraLocked &&
-          !placementMode
-        }
-
+        ref={orbitControlsRef}
+        makeDefault
+        enabled={!cameraLocked && !placementMode}
         enableDamping
         dampingFactor={0.08}
-
         rotateSpeed={0.6}
         zoomSpeed={0.8}
         panSpeed={0.8}
-
         enableRotate
         enableZoom
         enablePan
-
-        minDistance={1}
-        maxDistance={100}
-
-        minPolarAngle={0.05}
-        maxPolarAngle={
-          Math.PI - 0.05
-        }
-
+        minDistance={1.5}
+        maxDistance={120}
+        minPolarAngle={0.01}
+        maxPolarAngle={Math.PI - 0.05}
         touches={{
           ONE: THREE.TOUCH.ROTATE,
           TWO: THREE.TOUCH.DOLLY_PAN,
         }}
       />
-
     </Canvas>
   );
 }
 
-
 /* =========================================================
-   APP
+   MAIN APP COMPONENT
 ========================================================= */
 
 export default function App() {
+  const [placementMode, setPlacementMode] = useState(false);
+  const [previewPosition, setPreviewPosition] = useState([0, 0, 0]);
 
-  const [
-    placementMode,
-    setPlacementMode,
-  ] = useState(false);
+  const [furniture, setFurniture] = useState([]);
+  const [selectedFurniture, setSelectedFurniture] = useState(null);
+  const [transformMode, setTransformMode] = useState("translate");
+  const [cameraLocked, setCameraLocked] = useState(false);
 
-  const [
-    previewPosition,
-    setPreviewPosition,
-  ] = useState([0, 0, 0]);
+  const [selectedWall, setSelectedWall] = useState(null);
+  const [wallColors, setWallColors] = useState({});
 
-  const [
-    furniture,
-    setFurniture,
-  ] = useState([]);
-
-  const [
-    selectedFurniture,
-    setSelectedFurniture,
-  ] = useState(null);
-
-  const [
-    transformMode,
-    setTransformMode,
-  ] = useState("translate");
-
-  const [
-    cameraLocked,
-    setCameraLocked,
-  ] = useState(false);
-
-
-  /* =====================================================
-     START PLACEMENT
-  ===================================================== */
+  /* --- Placement Handlers --- */
 
   const startSofaPlacement = () => {
-
     setSelectedFurniture(null);
-
-    setPreviewPosition([
-      0,
-      0,
-      0,
-    ]);
-
+    setSelectedWall(null);
+    setPreviewPosition([0, 0, 0]);
     setPlacementMode(true);
   };
 
-
-  /* =====================================================
-     ADD SOFA
-  ===================================================== */
-
   const addSofa = () => {
-
     const newSofa = {
-
-      id:
-        `sofa-${Date.now()}`,
-
-      type:
-        "sofa",
-
-      position:
-        [...previewPosition],
-
-      rotation:
-        [0, 0, 0],
-
-      scale:
-        [1, 1, 1],
+      id: `sofa-${Date.now()}`,
+      type: "sofa",
+      position: [...previewPosition],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
     };
 
-
-    setFurniture(
-      (previous) => [
-        ...previous,
-        newSofa,
-      ]
-    );
-
+    setFurniture((prev) => [...prev, newSofa]);
     setPlacementMode(false);
-
-    setSelectedFurniture(
-      newSofa.id
-    );
-
-    setTransformMode(
-      "translate"
-    );
+    setSelectedFurniture(newSofa.id);
+    setTransformMode("translate");
   };
 
-
-  /* =====================================================
-     CANCEL
-  ===================================================== */
-
-  const cancelPlacement = () => {
-
+  const cancelPlacement = useCallback(() => {
     setPlacementMode(false);
+    setPreviewPosition([0, 0, 0]);
+  }, []);
 
-    setPreviewPosition([
-      0,
-      0,
-      0,
-    ]);
-  };
+  /* --- Furniture Actions --- */
 
-
-  /* =====================================================
-     DELETE
-  ===================================================== */
-
-  const deleteFurniture = () => {
-
-    if (!selectedFurniture) {
-      return;
-    }
-
-    setFurniture(
-      (previous) =>
-        previous.filter(
-          (item) =>
-            item.id !==
-            selectedFurniture
-        )
+  const updateFurnitureTransform = useCallback((id, newTransform) => {
+    setFurniture((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, ...newTransform } : item
+      )
     );
+  }, []);
 
+  const deleteFurniture = useCallback(() => {
+    if (!selectedFurniture) return;
+    setFurniture((prev) =>
+      prev.filter((item) => item.id !== selectedFurniture)
+    );
     setSelectedFurniture(null);
+  }, [selectedFurniture]);
+
+  /* --- Wall Customization Actions --- */
+
+  const handleWallColorChange = (color) => {
+    if (!selectedWall) return;
+    setWallColors((prev) => ({
+      ...prev,
+      [selectedWall]: color,
+    }));
   };
 
+  const handleResetWallColor = () => {
+    if (!selectedWall) return;
+    setWallColors((prev) => {
+      const updated = { ...prev };
+      delete updated[selectedWall];
+      return updated;
+    });
+  };
+
+  /* --- Keyboard Shortcuts --- */
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ignore when typing inside input fields
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
+        return;
+      }
+
+      if (e.key === "Escape") {
+        if (placementMode) {
+          cancelPlacement();
+        } else {
+          setSelectedFurniture(null);
+          setSelectedWall(null);
+        }
+      } else if (e.key === "w" || e.key === "W" || e.key === "g" || e.key === "G") {
+        if (selectedFurniture) setTransformMode("translate");
+      } else if (e.key === "e" || e.key === "E" || e.key === "r" || e.key === "R") {
+        if (selectedFurniture) setTransformMode("rotate");
+      } else if (e.key === "s" || e.key === "S") {
+        if (selectedFurniture) setTransformMode("scale");
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedFurniture) deleteFurniture();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [placementMode, selectedFurniture, cancelPlacement, deleteFurniture]);
 
   return (
     <div className="app">
-
-      {/* =================================================
-          HEADER
-      ================================================= */}
-
+      {/* Top Header */}
       <header className="topbar">
-
         <div className="brand">
-
-          <div className="brand-icon">
-            3D
-          </div>
-
+          <div className="brand-icon">3D</div>
           <div>
-
-            <div className="brand-title">
-              House Viewer
-            </div>
-
+            <div className="brand-title">House Viewer</div>
             <div className="brand-subtitle">
               360° Architectural Editor
             </div>
-
           </div>
-
         </div>
 
-
-        <div className="status">
-
-          <span className="status-dot" />
-
-          Model Loaded
-
+        <div className="topbar-right">
+          <div className="status">
+            <span className="status-dot" />
+            <span>Ready</span>
+          </div>
         </div>
-
       </header>
 
-
-      {/* =================================================
-          VIEWER
-      ================================================= */}
-
+      {/* Main 3D Canvas Area */}
       <main className="viewer">
-
         <Scene
-
-          furniture={
-            furniture
-          }
-
-          selectedFurniture={
-            selectedFurniture
-          }
-
-          setSelectedFurniture={
-            setSelectedFurniture
-          }
-
-          transformMode={
-            transformMode
-          }
-
-          placementMode={
-            placementMode
-          }
-
-          previewPosition={
-            previewPosition
-          }
-
-          setPreviewPosition={
-            setPreviewPosition
-          }
-
-          cameraLocked={
-            cameraLocked
-          }
-
-          setCameraLocked={
-            setCameraLocked
-          }
-
+          furniture={furniture}
+          selectedFurniture={selectedFurniture}
+          setSelectedFurniture={setSelectedFurniture}
+          transformMode={transformMode}
+          placementMode={placementMode}
+          previewPosition={previewPosition}
+          setPreviewPosition={setPreviewPosition}
+          cameraLocked={cameraLocked}
+          setCameraLocked={setCameraLocked}
+          wallColors={wallColors}
+          selectedWall={selectedWall}
+          setSelectedWall={setSelectedWall}
+          onUpdateFurnitureTransform={updateFurnitureTransform}
         />
 
-
+        {/* 360° Edit Mode Badge */}
         <div className="mode-badge">
-          360° EDIT
+          <span className="badge-dot" />
+          <span>360° EDIT</span>
         </div>
 
+        {/* Wall Customization Panel (shown when a wall is clicked) */}
+        {selectedWall && (
+          <div
+            className="wall-panel"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+          >
+            <div className="wall-panel-header">
+              <div className="wall-title-area">
+                <span className="wall-panel-label">Wall Customization</span>
+                <span className="wall-panel-name">
+                  {formatWallName(selectedWall)}
+                </span>
+              </div>
+              <button
+                className="close-btn"
+                title="Deselect Wall"
+                onClick={() => setSelectedWall(null)}
+              >
+                ✕
+              </button>
+            </div>
 
-        {/* =================================================
-            TOOLBAR
-        ================================================= */}
+            <div className="palette-section-title">Color Palette</div>
+            <div className="color-swatches-grid">
+              {WALL_PALETTE.map((item) => (
+                <button
+                  key={item.color}
+                  className={`color-swatch-btn ${
+                    wallColors[selectedWall] === item.color ? "active" : ""
+                  }`}
+                  style={{ backgroundColor: item.color }}
+                  title={item.name}
+                  onClick={() => handleWallColorChange(item.color)}
+                />
+              ))}
+            </div>
 
-        <div className="editor-toolbar">
-
-          {!placementMode && (
-            <>
+            <div className="custom-color-row">
+              <div className="custom-color-label">
+                <span>Custom:</span>
+                <input
+                  type="color"
+                  className="color-picker-input"
+                  value={wallColors[selectedWall] || "#ffffff"}
+                  onChange={(e) => handleWallColorChange(e.target.value)}
+                />
+              </div>
 
               <button
-                onClick={
-                  startSofaPlacement
-                }
+                className="reset-wall-btn"
+                onClick={handleResetWallColor}
+              >
+                Reset Default
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Placement Mode Banner */}
+        {placementMode && (
+          <div className="placement-banner">
+            <span>📍 Move cursor/finger over floor to position ghost sofa</span>
+          </div>
+        )}
+
+        {/* Floating Toolbar */}
+        <div
+          className="editor-toolbar"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+        >
+          {!placementMode && (
+            <>
+              <button
+                className="primary-add"
+                onClick={startSofaPlacement}
               >
                 + Sofa
               </button>
 
-
               {selectedFurniture && (
                 <>
+                  <div className="toolbar-divider" />
+
+                  <span className="selected-item-tag">Sofa Selected</span>
 
                   <button
-                    className={
-                      transformMode ===
-                      "translate"
-                        ? "active"
-                        : ""
-                    }
-
-                    onClick={() =>
-                      setTransformMode(
-                        "translate"
-                      )
-                    }
+                    className={transformMode === "translate" ? "active" : ""}
+                    onClick={() => setTransformMode("translate")}
+                    title="Translate (W)"
                   >
                     Move
                   </button>
 
-
                   <button
-                    className={
-                      transformMode ===
-                      "rotate"
-                        ? "active"
-                        : ""
-                    }
-
-                    onClick={() =>
-                      setTransformMode(
-                        "rotate"
-                      )
-                    }
+                    className={transformMode === "rotate" ? "active" : ""}
+                    onClick={() => setTransformMode("rotate")}
+                    title="Rotate (E)"
                   >
                     Rotate
                   </button>
 
-
                   <button
-                    className={
-                      transformMode ===
-                      "scale"
-                        ? "active"
-                        : ""
-                    }
-
-                    onClick={() =>
-                      setTransformMode(
-                        "scale"
-                      )
-                    }
+                    className={transformMode === "scale" ? "active" : ""}
+                    onClick={() => setTransformMode("scale")}
+                    title="Scale (S)"
                   >
                     Scale
                   </button>
 
-
                   <button
                     className="danger"
-                    onClick={
-                      deleteFurniture
-                    }
+                    onClick={deleteFurniture}
+                    title="Delete (Del)"
                   >
                     Delete
                   </button>
 
+                  <button
+                    onClick={() => setSelectedFurniture(null)}
+                    title="Deselect (Esc)"
+                  >
+                    ✕
+                  </button>
                 </>
               )}
-
             </>
           )}
-
 
           {placementMode && (
             <>
-
-              <div className="placement-text">
-                Move the ghost sofa to choose
-                its position
-              </div>
-
-
               <button
-                className="active add-button"
+                className="add-btn-cta"
                 onClick={addSofa}
               >
-                ADD SOFA
+                ✓ ADD SOFA
               </button>
-
 
               <button
-                onClick={
-                  cancelPlacement
-                }
+                onClick={cancelPlacement}
               >
-                Cancel
+                ✕ Cancel
               </button>
-
             </>
           )}
-
         </div>
 
-
-        {/* =================================================
-            HELP
-        ================================================= */}
-
+        {/* Navigation Help Bar */}
         <div className="navigation-help">
-
-          <span>Drag</span>
-          Rotate
-
-          <span>Scroll / Pinch</span>
-          Zoom
-
-          <span>
-            Right drag / Two fingers
-          </span>
-          Pan
-
+          <div className="nav-item">
+            <span>Left Drag:</span> 360° Rotate
+          </div>
+          <div className="nav-item">
+            <span>Scroll / Pinch:</span> Zoom
+          </div>
+          <div className="nav-item">
+            <span>Right Drag:</span> Pan
+          </div>
+          <div className="nav-item">
+            <span>Wall / Sofa:</span> Click to Edit
+          </div>
         </div>
-
       </main>
-
     </div>
   );
 }

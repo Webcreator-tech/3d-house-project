@@ -1,0 +1,372 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: Inter, Arial, sans-serif;
+}
+
+body {
+  background: #101318;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  background: #101318;
+  color: #f5f7fa;
+}
+
+
+/* =========================================================
+   TOP BAR
+========================================================= */
+
+.topbar {
+  height: 76px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 28px;
+
+  border-bottom: 1px solid #292e37;
+
+  background: #11151b;
+
+  position: relative;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-icon {
+  width: 42px;
+  height: 42px;
+
+  border: 1px solid #39404b;
+  border-radius: 10px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-weight: 700;
+}
+
+.brand-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.brand-subtitle {
+  margin-top: 4px;
+
+  color: #8f99a8;
+
+  font-size: 13px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  color: #aab3c0;
+
+  font-size: 14px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+
+  border-radius: 50%;
+
+  background: #37d68a;
+}
+
+
+/* =========================================================
+   VIEWER
+========================================================= */
+
+.viewer {
+  position: relative;
+
+  width: 100%;
+  height: calc(100% - 76px);
+}
+
+.viewer canvas {
+  display: block;
+}
+
+
+/* =========================================================
+   MODE BADGE
+========================================================= */
+
+.mode-badge {
+  position: absolute;
+
+  top: 22px;
+  left: 24px;
+
+  padding: 9px 13px;
+
+  border: 1px solid #303641;
+  border-radius: 9px;
+
+  background: rgba(18, 22, 28, 0.9);
+
+  color: #c1cad5;
+
+  font-size: 12px;
+  font-weight: 700;
+
+  letter-spacing: 0.08em;
+
+  z-index: 5;
+}
+
+
+/* =========================================================
+   TOOLBAR
+========================================================= */
+
+.editor-toolbar {
+  position: absolute;
+
+  left: 50%;
+  bottom: 58px;
+
+  transform: translateX(-50%);
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 10px;
+
+  border: 1px solid #303641;
+  border-radius: 13px;
+
+  background: rgba(18, 22, 28, 0.95);
+
+  backdrop-filter: blur(14px);
+
+  box-shadow:
+    0 15px 50px rgba(0, 0, 0, 0.35);
+
+  z-index: 10;
+}
+
+.editor-toolbar button {
+  min-height: 40px;
+
+  padding: 0 14px;
+
+  border: 1px solid #3a424e;
+  border-radius: 8px;
+
+  background: #202630;
+
+  color: #e7ebf0;
+
+  white-space: nowrap;
+}
+
+.editor-toolbar button:hover {
+  background: #2b323d;
+}
+
+.editor-toolbar button.active {
+  background: #f1f3f6;
+  color: #11151b;
+
+  border-color: #f1f3f6;
+}
+
+.editor-toolbar button.danger {
+  background: #281b1e;
+  border-color: #523138;
+  color: #e6aeb4;
+}
+
+.editor-toolbar button.add-button {
+  min-width: 110px;
+}
+
+.placement-text {
+  color: #aab4c1;
+
+  font-size: 12px;
+
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   NAVIGATION HELP
+========================================================= */
+
+.navigation-help {
+  position: absolute;
+
+  left: 50%;
+  bottom: 14px;
+
+  transform: translateX(-50%);
+
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+
+  padding: 8px 12px;
+
+  border: 1px solid #303641;
+  border-radius: 9px;
+
+  background: rgba(18, 22, 28, 0.88);
+
+  color: #858f9e;
+
+  font-size: 11px;
+
+  white-space: nowrap;
+
+  z-index: 5;
+}
+
+.navigation-help span {
+  color: #e2e7ed;
+  font-weight: 600;
+}
+
+
+/* =========================================================
+   LOADING
+========================================================= */
+
+.loading-box {
+  min-width: 180px;
+
+  padding: 18px;
+
+  border: 1px solid #303641;
+  border-radius: 12px;
+
+  background: #171b21;
+
+  color: #c4ccd6;
+
+  text-align: center;
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 700px) {
+
+  .topbar {
+    height: 62px;
+    padding: 0 14px;
+  }
+
+  .brand {
+    gap: 9px;
+  }
+
+  .brand-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .brand-title {
+    font-size: 15px;
+  }
+
+  .brand-subtitle {
+    font-size: 10px;
+  }
+
+  .status {
+    font-size: 10px;
+  }
+
+  .viewer {
+    height: calc(100% - 62px);
+  }
+
+  .mode-badge {
+    top: 12px;
+    left: 12px;
+  }
+
+  .editor-toolbar {
+    left: 10px;
+    right: 10px;
+    bottom: 48px;
+
+    transform: none;
+
+    justify-content: center;
+
+    flex-wrap: wrap;
+
+    padding: 8px;
+  }
+
+  .editor-toolbar button {
+    min-height: 42px;
+    padding: 0 12px;
+  }
+
+  .placement-text {
+    width: 100%;
+    text-align: center;
+    font-size: 11px;
+  }
+
+  .navigation-help {
+    left: 10px;
+    right: 10px;
+    bottom: 8px;
+
+    transform: none;
+
+    justify-content: center;
+
+    overflow: hidden;
+
+    font-size: 9px;
+  }
+
+  .navigation-help span {
+    font-size: 9px;
+  }
+}

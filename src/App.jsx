@@ -7,7 +7,7 @@ import React, {
   useState,
 } from "react";
 
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 
 import {
   Environment,
@@ -32,6 +32,31 @@ const BOUNDS = {
   HALF_WIDTH: 3.9,
   HALF_LENGTH: 4.5,
 };
+
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const raycaster = new THREE.Raycaster();
+const centerNDC = new THREE.Vector2(0, 0);
+const tempHit = new THREE.Vector3();
+
+function getCameraFloorIntersection(camera) {
+  if (!camera) return [0, 0, 0];
+  raycaster.setFromCamera(centerNDC, camera);
+  const hit = raycaster.ray.intersectPlane(floorPlane, tempHit);
+  if (hit) {
+    const x = THREE.MathUtils.clamp(
+      tempHit.x,
+      -BOUNDS.HALF_WIDTH,
+      BOUNDS.HALF_WIDTH
+    );
+    const z = THREE.MathUtils.clamp(
+      tempHit.z,
+      -BOUNDS.HALF_LENGTH,
+      BOUNDS.HALF_LENGTH
+    );
+    return [x, 0, z];
+  }
+  return [0, 0, 0];
+}
 
 const WALL_PALETTE = [
   { name: "Pure White", color: "#FFFFFF" },
@@ -320,8 +345,19 @@ function PlacementPreview({ active, position }) {
    PLACEMENT SURFACE (RAYCASTING FLOOR PLANE)
 ========================================================= */
 
-function PlacementSurface({ active, onMove }) {
-  if (!active) return null;
+function PlacementSurface({
+  placementMode,
+  onFloorHover,
+  onMove,
+  onRegisterCamera,
+}) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (onRegisterCamera) {
+      onRegisterCamera(camera);
+    }
+  }, [camera, onRegisterCamera]);
 
   const handlePointer = (event) => {
     event.stopPropagation();
@@ -339,7 +375,12 @@ function PlacementSurface({ active, onMove }) {
       BOUNDS.HALF_LENGTH
     );
 
-    onMove([x, 0, z]);
+    const pos = [x, 0, z];
+    onFloorHover(pos);
+
+    if (placementMode) {
+      onMove(pos);
+    }
   };
 
   return (
@@ -496,6 +537,8 @@ function Scene({
   placementMode,
   previewPosition,
   setPreviewPosition,
+  onFloorHover,
+  onRegisterCamera,
   cameraLocked,
   setCameraLocked,
   wallColors,
@@ -581,8 +624,10 @@ function Scene({
 
         {/* Floor Raycasting Plane */}
         <PlacementSurface
-          active={placementMode}
+          placementMode={placementMode}
+          onFloorHover={onFloorHover}
           onMove={setPreviewPosition}
+          onRegisterCamera={onRegisterCamera}
         />
 
         <Environment preset="city" />
@@ -622,6 +667,9 @@ export default function App() {
   const [placementMode, setPlacementMode] = useState(false);
   const [previewPosition, setPreviewPosition] = useState([0, 0, 0]);
 
+  const lastFloorPosRef = useRef(null);
+  const cameraRef = useRef(null);
+
   const [furniture, setFurniture] = useState([]);
   const [selectedFurniture, setSelectedFurniture] = useState(null);
   const [transformMode, setTransformMode] = useState("translate");
@@ -630,16 +678,39 @@ export default function App() {
   const [selectedWall, setSelectedWall] = useState(null);
   const [wallColors, setWallColors] = useState({});
 
+  const handleFloorHover = useCallback((pos) => {
+    lastFloorPosRef.current = pos;
+  }, []);
+
+  const handleRegisterCamera = useCallback((camera) => {
+    cameraRef.current = camera;
+  }, []);
+
   /* --- Placement Handlers --- */
 
   const startSofaPlacement = () => {
     setSelectedFurniture(null);
     setSelectedWall(null);
-    setPreviewPosition([0, 0, 0]);
+
+    // 1. If we have a recent valid floor position, use it
+    let initialPos = lastFloorPosRef.current;
+
+    // 2. If no floor position tracked yet, raycast camera view center to interior floor plane
+    if (!initialPos && cameraRef.current) {
+      initialPos = getCameraFloorIntersection(cameraRef.current);
+    }
+
+    if (!initialPos) {
+      initialPos = [0, 0, 0];
+    }
+
+    lastFloorPosRef.current = initialPos;
+    setPreviewPosition(initialPos);
     setPlacementMode(true);
   };
 
   const addSofa = () => {
+    if (!placementMode) return;
     const newSofa = {
       id: `sofa-${Date.now()}`,
       type: "sofa",
@@ -656,7 +727,6 @@ export default function App() {
 
   const cancelPlacement = useCallback(() => {
     setPlacementMode(false);
-    setPreviewPosition([0, 0, 0]);
   }, []);
 
   /* --- Furniture Actions --- */
@@ -759,6 +829,8 @@ export default function App() {
           placementMode={placementMode}
           previewPosition={previewPosition}
           setPreviewPosition={setPreviewPosition}
+          onFloorHover={handleFloorHover}
+          onRegisterCamera={handleRegisterCamera}
           cameraLocked={cameraLocked}
           setCameraLocked={setCameraLocked}
           wallColors={wallColors}

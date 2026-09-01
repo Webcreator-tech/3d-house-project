@@ -359,8 +359,10 @@ function PlacementSurface({
     }
   }, [camera, onRegisterCamera]);
 
-  const handlePointer = (event) => {
-    event.stopPropagation();
+  const handlePointerMove = (event) => {
+    if (placementMode) {
+      event.stopPropagation();
+    }
     if (!event.point) return;
 
     // Clamp coordinates strictly to interior floor boundary
@@ -383,12 +385,33 @@ function PlacementSurface({
     }
   };
 
+  const handlePointerDown = (event) => {
+    if (!placementMode) return;
+    event.stopPropagation();
+    if (!event.point) return;
+
+    const x = THREE.MathUtils.clamp(
+      event.point.x,
+      -BOUNDS.HALF_WIDTH,
+      BOUNDS.HALF_WIDTH
+    );
+    const z = THREE.MathUtils.clamp(
+      event.point.z,
+      -BOUNDS.HALF_LENGTH,
+      BOUNDS.HALF_LENGTH
+    );
+
+    const pos = [x, 0, z];
+    onFloorHover(pos);
+    onMove(pos);
+  };
+
   return (
     <mesh
       position={[0, 0.01, 0]}
       rotation={[-Math.PI / 2, 0, 0]}
-      onPointerMove={handlePointer}
-      onPointerDown={handlePointer}
+      onPointerMove={handlePointerMove}
+      onPointerDown={placementMode ? handlePointerDown : undefined}
     >
       <planeGeometry
         args={[BOUNDS.HALF_WIDTH * 2, BOUNDS.HALF_LENGTH * 2]}
@@ -425,14 +448,15 @@ function FurnitureItem({
   // Hook up TransformControls events and lock OrbitControls
   useEffect(() => {
     const controls = transformRef.current;
+    const orbitControls = orbitControlsRef?.current;
     if (!controls) return;
 
     const handleDraggingChanged = (event) => {
       const isDragging = Boolean(event.value);
       setCameraLocked(isDragging);
 
-      if (orbitControlsRef?.current) {
-        orbitControlsRef.current.enabled = !isDragging;
+      if (orbitControls) {
+        orbitControls.enabled = !isDragging;
       }
 
       // When drag ends, persist the updated transform to React state
@@ -479,8 +503,12 @@ function FurnitureItem({
         "objectChange",
         handleObjectChange
       );
+      setCameraLocked(false);
+      if (orbitControls) {
+        orbitControls.enabled = true;
+      }
     };
-  }, [item.id, onUpdateTransform, setCameraLocked, orbitControlsRef]);
+  }, [selected, item.id, onUpdateTransform, setCameraLocked, orbitControlsRef]);
 
   return (
     <>
@@ -721,12 +749,15 @@ export default function App() {
 
     setFurniture((prev) => [...prev, newSofa]);
     setPlacementMode(false);
+    setCameraLocked(false);
     setSelectedFurniture(newSofa.id);
+    setSelectedWall(null);
     setTransformMode("translate");
   };
 
   const cancelPlacement = useCallback(() => {
     setPlacementMode(false);
+    setCameraLocked(false);
   }, []);
 
   /* --- Furniture Actions --- */

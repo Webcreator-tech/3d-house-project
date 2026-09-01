@@ -186,20 +186,51 @@ function HouseModel({
     });
   }, [wallColors, selectedWall, wallMeshes]);
 
+  const pointerDownPosRef = useRef(null);
+
   const handlePointerDown = (event) => {
     if (placementMode) return;
 
-    let target = event.object;
+    const target = event.object;
     if (target && target.userData?.editableWall) {
-      event.stopPropagation();
-      onSelectWall(target.name);
+      pointerDownPosRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        targetName: target.name,
+      };
+    } else {
+      pointerDownPosRef.current = null;
     }
+  };
+
+  const handlePointerUp = (event) => {
+    if (placementMode) return;
+    if (!pointerDownPosRef.current) return;
+
+    const { x, y, targetName } = pointerDownPosRef.current;
+    pointerDownPosRef.current = null;
+
+    const dx = event.clientX - x;
+    const dy = event.clientY - y;
+    const dist = Math.hypot(dx, dy);
+
+    // If movement is smaller than 10px, treat as stationary click/tap
+    if (dist < 10) {
+      event.stopPropagation();
+      onSelectWall(targetName);
+    }
+  };
+
+  const handlePointerCancel = () => {
+    pointerDownPosRef.current = null;
   };
 
   return (
     <primitive
       object={model}
       onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
     />
   );
 }

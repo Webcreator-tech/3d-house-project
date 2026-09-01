@@ -434,16 +434,16 @@ function FurnitureItem({
   setCameraLocked,
   orbitControlsRef,
 }) {
-  const groupRef = useRef(null);
+  const [target, setTarget] = useState(null);
   const transformRef = useRef(null);
 
   // Sync Three.js transform with item props
   useEffect(() => {
-    if (!groupRef.current) return;
-    groupRef.current.position.set(...item.position);
-    groupRef.current.rotation.set(...item.rotation);
-    groupRef.current.scale.set(...item.scale);
-  }, [item.position, item.rotation, item.scale]);
+    if (!target) return;
+    target.position.set(...item.position);
+    target.rotation.set(...item.rotation);
+    target.scale.set(...item.scale);
+  }, [target, item.position, item.rotation, item.scale]);
 
   // Hook up TransformControls events and lock OrbitControls
   useEffect(() => {
@@ -460,10 +460,10 @@ function FurnitureItem({
       }
 
       // When drag ends, persist the updated transform to React state
-      if (!isDragging && groupRef.current) {
-        const p = groupRef.current.position;
-        const r = groupRef.current.rotation;
-        const s = groupRef.current.scale;
+      if (!isDragging && target) {
+        const p = target.position;
+        const r = target.rotation;
+        const s = target.scale;
 
         onUpdateTransform(item.id, {
           position: [p.x, p.y, p.z],
@@ -474,8 +474,8 @@ function FurnitureItem({
     };
 
     const handleObjectChange = () => {
-      if (groupRef.current) {
-        const p = groupRef.current.position;
+      if (target) {
+        const p = target.position;
         // Restrict furniture to interior bounds and floor level
         p.x = THREE.MathUtils.clamp(
           p.x,
@@ -508,14 +508,14 @@ function FurnitureItem({
         orbitControls.enabled = true;
       }
     };
-  }, [selected, item.id, onUpdateTransform, setCameraLocked, orbitControlsRef]);
+  }, [selected, target, item.id, onUpdateTransform, setCameraLocked, orbitControlsRef]);
 
   return (
     <>
-      {selected && (
+      {selected && target && (
         <TransformControls
           ref={transformRef}
-          object={groupRef}
+          object={target}
           mode={transformMode}
           size={0.75}
           space="local"
@@ -523,7 +523,7 @@ function FurnitureItem({
       )}
 
       <group
-        ref={groupRef}
+        ref={setTarget}
         position={item.position}
         rotation={item.rotation}
         scale={item.scale}
@@ -943,17 +943,11 @@ export default function App() {
         )}
 
         {/* Floating Toolbar */}
-        <div
-          className="editor-toolbar"
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerMove={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-          onPointerEnter={(e) => e.stopPropagation()}
-          onPointerLeave={(e) => e.stopPropagation()}
-        >
+        <div className="editor-toolbar">
           {!placementMode && (
             <>
               <button
+                type="button"
                 className="primary-add"
                 onClick={startSofaPlacement}
               >
@@ -967,6 +961,7 @@ export default function App() {
                   <span className="selected-item-tag">Sofa Selected</span>
 
                   <button
+                    type="button"
                     className={transformMode === "translate" ? "active" : ""}
                     onClick={() => setTransformMode("translate")}
                     title="Translate (W)"
@@ -975,6 +970,7 @@ export default function App() {
                   </button>
 
                   <button
+                    type="button"
                     className={transformMode === "rotate" ? "active" : ""}
                     onClick={() => setTransformMode("rotate")}
                     title="Rotate (E)"
@@ -983,6 +979,7 @@ export default function App() {
                   </button>
 
                   <button
+                    type="button"
                     className={transformMode === "scale" ? "active" : ""}
                     onClick={() => setTransformMode("scale")}
                     title="Scale (S)"
@@ -991,6 +988,7 @@ export default function App() {
                   </button>
 
                   <button
+                    type="button"
                     className="danger"
                     onClick={deleteFurniture}
                     title="Delete (Del)"
@@ -999,6 +997,7 @@ export default function App() {
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => setSelectedFurniture(null)}
                     title="Deselect (Esc)"
                   >
@@ -1012,14 +1011,22 @@ export default function App() {
           {placementMode && (
             <>
               <button
+                type="button"
                 className="add-btn-cta"
-                onClick={addSofa}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  addSofa();
+                }}
               >
                 ✓ ADD SOFA
               </button>
 
               <button
-                onClick={cancelPlacement}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cancelPlacement();
+                }}
               >
                 ✕ Cancel
               </button>

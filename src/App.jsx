@@ -159,7 +159,21 @@ function HouseModel({
         child.userData.editableWall = false;
       }
     });
+const handlePointerDown = (event) => {
+  if (placementMode) return;
 
+  let target = event.object;
+
+  while (target && target !== model) {
+    if (target.userData?.editableWall) {
+      event.stopPropagation();
+      onSelectWall(target.name);
+      return;
+    }
+
+    target = target.parent;
+  }
+};
     return { model: cloned, wallMeshes: meshes };
   }, [scene]);
 

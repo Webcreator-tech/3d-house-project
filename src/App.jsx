@@ -23,9 +23,6 @@ import "./App.css";
 
 /* =========================================================
    CONSTANTS & BOUNDS
-   House is 32 × 36 ft (~9.75 × 10.97 m).
-   Centered coordinates: X in [-4.87, 4.87], Z in [-5.48, 5.48].
-   Interior usable bounds for furniture placement:
 ========================================================= */
 
 const BOUNDS = {
@@ -33,30 +30,51 @@ const BOUNDS = {
   HALF_LENGTH: 4.5,
 };
 
-const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+/* =========================================================
+   CAMERA -> FLOOR HELPERS
+========================================================= */
+
+const floorPlane = new THREE.Plane(
+  new THREE.Vector3(0, 1, 0),
+  0
+);
+
 const raycaster = new THREE.Raycaster();
 const centerNDC = new THREE.Vector2(0, 0);
 const tempHit = new THREE.Vector3();
 
 function getCameraFloorIntersection(camera) {
   if (!camera) return [0, 0, 0];
+
   raycaster.setFromCamera(centerNDC, camera);
-  const hit = raycaster.ray.intersectPlane(floorPlane, tempHit);
+
+  const hit = raycaster.ray.intersectPlane(
+    floorPlane,
+    tempHit
+  );
+
   if (hit) {
     const x = THREE.MathUtils.clamp(
       tempHit.x,
       -BOUNDS.HALF_WIDTH,
       BOUNDS.HALF_WIDTH
     );
+
     const z = THREE.MathUtils.clamp(
       tempHit.z,
       -BOUNDS.HALF_LENGTH,
       BOUNDS.HALF_LENGTH
     );
+
     return [x, 0, z];
   }
+
   return [0, 0, 0];
 }
+
+/* =========================================================
+   WALL PALETTE
+========================================================= */
 
 const WALL_PALETTE = [
   { name: "Pure White", color: "#FFFFFF" },
@@ -73,11 +91,15 @@ const WALL_PALETTE = [
   { name: "Sky Blue", color: "#93C5FD" },
 ];
 
-/* Helper to identify customizable wall meshes vs doors/windows/lintels/floors */
+/* =========================================================
+   EDITABLE WALL DETECTION
+========================================================= */
+
 function isEditableWall(name) {
   if (!name) return false;
+
   const n = name.toLowerCase();
-  // Filter out non-customizable targets: lintels, floors, texts, camera
+
   if (
     n.includes("lintel") ||
     n.includes("floor") ||
@@ -86,12 +108,21 @@ function isEditableWall(name) {
   ) {
     return false;
   }
-  return n.startsWith("div_") || n.startsWith("wrap_") || n.startsWith("ext_");
+
+  return (
+    n.startsWith("div_") ||
+    n.startsWith("wrap_") ||
+    n.startsWith("ext_")
+  );
 }
 
-/* Helper to convert mesh names into clean human-readable labels */
+/* =========================================================
+   WALL DISPLAY NAMES
+========================================================= */
+
 function formatWallName(name) {
   if (!name) return "Wall";
+
   const nameMap = {
     Div_H_Kit_Toilet: "Kitchen / Toilet Partition",
     Div_H_Right_Bed: "Bedroom Partition Wall",
@@ -101,11 +132,13 @@ function formatWallName(name) {
     Div_V_Top_Bed: "Bedroom Divider 1",
     Div_V_Top_Bed_2: "Bedroom Divider 2",
     Div_V_Top_Toilet: "Toilet Partition Wall",
+
     Ext_Bot_HallSide: "Exterior South Wall (Hall)",
     Ext_Bot_KitSide: "Exterior South Wall (Kitchen)",
     Ext_Left: "Exterior West Wall",
     Ext_Right: "Exterior East Wall",
     Ext_Top: "Exterior North Wall",
+
     Wrap_Bed_Right: "Bedroom East Wall",
     Wrap_Bed_Top: "Bedroom North Wall",
     Wrap_Hall_Bot1: "Living Room South Wall 1",
@@ -114,11 +147,15 @@ function formatWallName(name) {
     Wrap_Kit_Bot: "Kitchen South Wall",
     Wrap_Kit_Left: "Kitchen West Wall",
   };
-  return nameMap[name] || name.replace(/_/g, " ");
+
+  return (
+    nameMap[name] ||
+    name.replace(/_/g, " ")
+  );
 }
 
 /* =========================================================
-   HOUSE MODEL COMPONENT
+   HOUSE MODEL
 ========================================================= */
 
 function HouseModel({
@@ -133,9 +170,16 @@ function HouseModel({
     const cloned = scene.clone(true);
 
     const box = new THREE.Box3().setFromObject(cloned);
-    const center = box.getCenter(new THREE.Vector3());
 
-    cloned.position.set(-center.x, -box.min.y, -center.z);
+    const center = box.getCenter(
+      new THREE.Vector3()
+    );
+
+    cloned.position.set(
+      -center.x,
+      -box.min.y,
+      -center.z
+    );
 
     const meshes = {};
 
@@ -144,93 +188,200 @@ function HouseModel({
 
       child.castShadow = true;
       child.receiveShadow = true;
+
       child.userData.housePart = true;
 
       const name = child.name || "";
+
       if (isEditableWall(name)) {
         child.userData.editableWall = true;
-        // Clone material per mesh so each wall surface has an independent material instance
+
+        /*
+         * Clone material so every wall has its own
+         * independent color.
+         */
         if (child.material) {
-          child.material = child.material.clone();
-          child.userData.initialColor = child.material.color.clone();
+          child.material =
+            child.material.clone();
+
+          child.userData.initialColor =
+            child.material.color.clone();
         }
+
         meshes[name] = child;
       } else {
         child.userData.editableWall = false;
       }
     });
-const handlePointerDown = (event) => {
-  if (placementMode) return;
 
-  let target = event.object;
-
-  while (target && target !== model) {
-    if (target.userData?.editableWall) {
-      event.stopPropagation();
-      onSelectWall(target.name);
-      return;
-    }
-
-    target = target.parent;
-  }
-};
-    return { model: cloned, wallMeshes: meshes };
+    return {
+      model: cloned,
+      wallMeshes: meshes,
+    };
   }, [scene]);
 
-  // Sync wall colors and selection highlights
+  /* =======================================================
+     WALL COLOR + SELECTION HIGHLIGHT
+  ======================================================= */
+
   useEffect(() => {
-    Object.entries(wallMeshes).forEach(([name, mesh]) => {
-      if (!mesh || !mesh.material) return;
+    Object.entries(wallMeshes).forEach(
+      ([name, mesh]) => {
+        if (!mesh || !mesh.material) return;
 
-      // Apply custom or default color
-      if (wallColors[name]) {
-        mesh.material.color.set(wallColors[name]);
-      } else if (mesh.userData.initialColor) {
-        mesh.material.color.copy(mesh.userData.initialColor);
+        if (wallColors[name]) {
+          mesh.material.color.set(
+            wallColors[name]
+          );
+        } else if (
+          mesh.userData.initialColor
+        ) {
+          mesh.material.color.copy(
+            mesh.userData.initialColor
+          );
+        }
+
+        if (selectedWall === name) {
+          mesh.material.emissive =
+            new THREE.Color("#38bdf8");
+
+          mesh.material.emissiveIntensity = 0.35;
+        } else {
+          mesh.material.emissive =
+            new THREE.Color(0, 0, 0);
+
+          mesh.material.emissiveIntensity = 0;
+        }
+      }
+    );
+  }, [
+    wallColors,
+    selectedWall,
+    wallMeshes,
+  ]);
+
+  /* =======================================================
+     WALL CLICK / TAP DETECTION
+     
+     Important:
+     - Direct hit is checked first.
+     - All raycast intersections are then checked.
+     - Parent hierarchy is checked.
+     - Small movement = click/tap.
+     - Large movement = camera drag, no selection.
+  ======================================================= */
+
+  const pointerDownPosRef =
+    useRef(null);
+
+  const findEditableWall = useCallback(
+    (object) => {
+      let current = object;
+
+      while (
+        current &&
+        current !== model
+      ) {
+        if (
+          current.userData?.editableWall
+        ) {
+          return current;
+        }
+
+        current = current.parent;
       }
 
-      // Visual highlight for selected wall
-      if (selectedWall === name) {
-        mesh.material.emissive = new THREE.Color("#38bdf8");
-        mesh.material.emissiveIntensity = 0.35;
-      } else {
-        mesh.material.emissive = new THREE.Color(0, 0, 0);
-        mesh.material.emissiveIntensity = 0;
-      }
-    });
-  }, [wallColors, selectedWall, wallMeshes]);
+      return null;
+    },
+    [model]
+  );
 
-  const pointerDownPosRef = useRef(null);
+  const getWallFromEvent = useCallback(
+    (event) => {
+      /* First check the directly hit object */
+      const directWall =
+        findEditableWall(event.object);
+
+      if (directWall) {
+        return directWall;
+      }
+
+      /*
+       * Important for interior walls:
+       * event.object may be another architectural
+       * mesh sitting in front of the actual wall.
+       */
+      if (event.intersections?.length) {
+        for (const intersection of
+          event.intersections) {
+          const wall =
+            findEditableWall(
+              intersection.object
+            );
+
+          if (wall) {
+            return wall;
+          }
+        }
+      }
+
+      return null;
+    },
+    [findEditableWall]
+  );
 
   const handlePointerDown = (event) => {
     if (placementMode) return;
 
-    const target = event.object;
-    if (target && target.userData?.editableWall) {
-      pointerDownPosRef.current = {
-        x: event.clientX,
-        y: event.clientY,
-        targetName: target.name,
-      };
-    } else {
+    const wall =
+      getWallFromEvent(event);
+
+    if (!wall) {
       pointerDownPosRef.current = null;
+      return;
     }
+
+    pointerDownPosRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      targetName: wall.name,
+    };
   };
 
   const handlePointerUp = (event) => {
     if (placementMode) return;
-    if (!pointerDownPosRef.current) return;
 
-    const { x, y, targetName } = pointerDownPosRef.current;
+    if (!pointerDownPosRef.current) {
+      return;
+    }
+
+    const {
+      x,
+      y,
+      targetName,
+    } = pointerDownPosRef.current;
+
     pointerDownPosRef.current = null;
 
-    const dx = event.clientX - x;
-    const dy = event.clientY - y;
-    const dist = Math.hypot(dx, dy);
+    const dx =
+      event.clientX - x;
 
-    // If movement is smaller than 10px, treat as stationary click/tap
-    if (dist < 10) {
+    const dy =
+      event.clientY - y;
+
+    const distance =
+      Math.hypot(dx, dy);
+
+    /*
+     * Less than 10px movement =
+     * stationary click/tap.
+     *
+     * More than 10px =
+     * camera movement/swipe.
+     */
+    if (distance < 10) {
       event.stopPropagation();
+
       onSelectWall(targetName);
     }
   };
@@ -242,26 +393,41 @@ const handlePointerDown = (event) => {
   return (
     <primitive
       object={model}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
+      onPointerDown={
+        handlePointerDown
+      }
+      onPointerUp={
+        handlePointerUp
+      }
+      onPointerCancel={
+        handlePointerCancel
+      }
     />
   );
 }
 
-useGLTF.preload("/models/house.glb");
+useGLTF.preload(
+  "/models/house.glb"
+);
 
 /* =========================================================
-   TEMPORARY SOFA PROCEDURAL GEOMETRY
+   TEMPORARY SOFA
 ========================================================= */
 
 function SofaModel({ ghost = false }) {
   const material = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: ghost ? "#38bdf8" : "#6b7280",
+        color: ghost
+          ? "#38bdf8"
+          : "#6b7280",
+
         transparent: ghost,
-        opacity: ghost ? 0.45 : 1,
+
+        opacity: ghost
+          ? 0.45
+          : 1,
+
         roughness: 0.8,
       }),
     [ghost]
@@ -270,9 +436,16 @@ function SofaModel({ ghost = false }) {
   const darkMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: ghost ? "#0284c7" : "#374151",
+        color: ghost
+          ? "#0284c7"
+          : "#374151",
+
         transparent: ghost,
-        opacity: ghost ? 0.4 : 1,
+
+        opacity: ghost
+          ? 0.4
+          : 1,
+
         roughness: 0.85,
       }),
     [ghost]
@@ -280,44 +453,97 @@ function SofaModel({ ghost = false }) {
 
   return (
     <group>
+
       {/* Seat */}
       <mesh
         position={[0, 0.65, 0]}
         material={material}
         castShadow={!ghost}
-        raycast={ghost ? () => null : undefined}
+        raycast={
+          ghost
+            ? () => null
+            : undefined
+        }
       >
-        <boxGeometry args={[3.2, 0.7, 1.35]} />
+        <boxGeometry
+          args={[
+            3.2,
+            0.7,
+            1.35,
+          ]}
+        />
       </mesh>
 
       {/* Back */}
       <mesh
-        position={[0, 1.45, -0.52]}
+        position={[
+          0,
+          1.45,
+          -0.52,
+        ]}
         material={material}
         castShadow={!ghost}
-        raycast={ghost ? () => null : undefined}
+        raycast={
+          ghost
+            ? () => null
+            : undefined
+        }
       >
-        <boxGeometry args={[3.2, 1.35, 0.35]} />
+        <boxGeometry
+          args={[
+            3.2,
+            1.35,
+            0.35,
+          ]}
+        />
       </mesh>
 
       {/* Left arm */}
       <mesh
-        position={[-1.48, 1.0, 0]}
+        position={[
+          -1.48,
+          1.0,
+          0,
+        ]}
         material={material}
         castShadow={!ghost}
-        raycast={ghost ? () => null : undefined}
+        raycast={
+          ghost
+            ? () => null
+            : undefined
+        }
       >
-        <boxGeometry args={[0.3, 0.85, 1.4]} />
+        <boxGeometry
+          args={[
+            0.3,
+            0.85,
+            1.4,
+          ]}
+        />
       </mesh>
 
       {/* Right arm */}
       <mesh
-        position={[1.48, 1.0, 0]}
+        position={[
+          1.48,
+          1.0,
+          0,
+        ]}
         material={material}
         castShadow={!ghost}
-        raycast={ghost ? () => null : undefined}
+        raycast={
+          ghost
+            ? () => null
+            : undefined
+        }
       >
-        <boxGeometry args={[0.3, 0.85, 1.4]} />
+        <boxGeometry
+          args={[
+            0.3,
+            0.85,
+            1.4,
+          ]}
+        />
       </mesh>
 
       {/* Legs */}
@@ -332,9 +558,19 @@ function SofaModel({ ghost = false }) {
           position={pos}
           material={darkMaterial}
           castShadow={!ghost}
-          raycast={ghost ? () => null : undefined}
+          raycast={
+            ghost
+              ? () => null
+              : undefined
+          }
         >
-          <boxGeometry args={[0.16, 0.5, 0.16]} />
+          <boxGeometry
+            args={[
+              0.16,
+              0.5,
+              0.16,
+            ]}
+          />
         </mesh>
       ))}
     </group>
@@ -342,44 +578,77 @@ function SofaModel({ ghost = false }) {
 }
 
 /* =========================================================
-   PLACEMENT PREVIEW (GHOST + GROUND RING)
+   PLACEMENT PREVIEW
 ========================================================= */
 
-function PlacementPreview({ active, position }) {
+function PlacementPreview({
+  active,
+  position,
+}) {
   if (!active) return null;
 
   return (
     <group position={position}>
-      {/* Ghost sofa */}
+
       <SofaModel ghost />
 
-      {/* Floor guide ring */}
+      {/* Floor ring */}
       <mesh
-        position={[0, 0.025, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
+        position={[
+          0,
+          0.025,
+          0,
+        ]}
+        rotation={[
+          -Math.PI / 2,
+          0,
+          0,
+        ]}
         raycast={() => null}
       >
-        <ringGeometry args={[1.75, 1.95, 48]} />
+        <ringGeometry
+          args={[
+            1.75,
+            1.95,
+            48,
+          ]}
+        />
+
         <meshBasicMaterial
           color="#38bdf8"
           transparent
           opacity={0.85}
-          side={THREE.DoubleSide}
+          side={
+            THREE.DoubleSide
+          }
         />
       </mesh>
 
-      {/* Subtle center spot */}
+      {/* Center spot */}
       <mesh
-        position={[0, 0.02, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
+        position={[
+          0,
+          0.02,
+          0,
+        ]}
+        rotation={[
+          -Math.PI / 2,
+          0,
+          0,
+        ]}
         raycast={() => null}
       >
-        <circleGeometry args={[0.2, 24]} />
+        <circleGeometry
+          args={[0.2, 24]}
+        />
+
         <meshBasicMaterial
           color="#38bdf8"
           transparent
           opacity={0.6}
-          side={THREE.DoubleSide}
+          side={
+            THREE.DoubleSide
+          }
         />
       </mesh>
     </group>
@@ -387,7 +656,7 @@ function PlacementPreview({ active, position }) {
 }
 
 /* =========================================================
-   PLACEMENT SURFACE (RAYCASTING FLOOR PLANE)
+   PLACEMENT SURFACE
 ========================================================= */
 
 function PlacementSurface({
@@ -396,33 +665,43 @@ function PlacementSurface({
   onMove,
   onRegisterCamera,
 }) {
-  const { camera } = useThree();
+  const { camera } =
+    useThree();
 
   useEffect(() => {
     if (onRegisterCamera) {
       onRegisterCamera(camera);
     }
-  }, [camera, onRegisterCamera]);
+  }, [
+    camera,
+    onRegisterCamera,
+  ]);
 
-  const handlePointerMove = (event) => {
+  const handlePointerMove = (
+    event
+  ) => {
     if (placementMode) {
       event.stopPropagation();
     }
+
     if (!event.point) return;
 
-    // Clamp coordinates strictly to interior floor boundary
-    const x = THREE.MathUtils.clamp(
-      event.point.x,
-      -BOUNDS.HALF_WIDTH,
-      BOUNDS.HALF_WIDTH
-    );
-    const z = THREE.MathUtils.clamp(
-      event.point.z,
-      -BOUNDS.HALF_LENGTH,
-      BOUNDS.HALF_LENGTH
-    );
+    const x =
+      THREE.MathUtils.clamp(
+        event.point.x,
+        -BOUNDS.HALF_WIDTH,
+        BOUNDS.HALF_WIDTH
+      );
+
+    const z =
+      THREE.MathUtils.clamp(
+        event.point.z,
+        -BOUNDS.HALF_LENGTH,
+        BOUNDS.HALF_LENGTH
+      );
 
     const pos = [x, 0, z];
+
     onFloorHover(pos);
 
     if (placementMode) {
@@ -430,44 +709,72 @@ function PlacementSurface({
     }
   };
 
-  const handlePointerDown = (event) => {
+  const handlePointerDown = (
+    event
+  ) => {
     if (!placementMode) return;
+
     event.stopPropagation();
+
     if (!event.point) return;
 
-    const x = THREE.MathUtils.clamp(
-      event.point.x,
-      -BOUNDS.HALF_WIDTH,
-      BOUNDS.HALF_WIDTH
-    );
-    const z = THREE.MathUtils.clamp(
-      event.point.z,
-      -BOUNDS.HALF_LENGTH,
-      BOUNDS.HALF_LENGTH
-    );
+    const x =
+      THREE.MathUtils.clamp(
+        event.point.x,
+        -BOUNDS.HALF_WIDTH,
+        BOUNDS.HALF_WIDTH
+      );
+
+    const z =
+      THREE.MathUtils.clamp(
+        event.point.z,
+        -BOUNDS.HALF_LENGTH,
+        BOUNDS.HALF_LENGTH
+      );
 
     const pos = [x, 0, z];
+
     onFloorHover(pos);
     onMove(pos);
   };
 
   return (
     <mesh
-      position={[0, 0.01, 0]}
-      rotation={[-Math.PI / 2, 0, 0]}
-      onPointerMove={handlePointerMove}
-      onPointerDown={placementMode ? handlePointerDown : undefined}
+      position={[
+        0,
+        0.01,
+        0,
+      ]}
+      rotation={[
+        -Math.PI / 2,
+        0,
+        0,
+      ]}
+      onPointerMove={
+        handlePointerMove
+      }
+      onPointerDown={
+        placementMode
+          ? handlePointerDown
+          : undefined
+      }
     >
       <planeGeometry
-        args={[BOUNDS.HALF_WIDTH * 2, BOUNDS.HALF_LENGTH * 2]}
+        args={[
+          BOUNDS.HALF_WIDTH * 2,
+          BOUNDS.HALF_LENGTH * 2,
+        ]}
       />
-      <meshBasicMaterial visible={false} />
+
+      <meshBasicMaterial
+        visible={false}
+      />
     </mesh>
   );
 }
 
 /* =========================================================
-   FURNITURE ITEM (WITH PERSISTENT TRANSFORMS)
+   FURNITURE ITEM
 ========================================================= */
 
 function FurnitureItem({
@@ -479,81 +786,160 @@ function FurnitureItem({
   setCameraLocked,
   orbitControlsRef,
 }) {
-  const [target, setTarget] = useState(null);
-  const transformRef = useRef(null);
+  const [target, setTarget] =
+    useState(null);
 
-  // Sync Three.js transform with item props
+  const transformRef =
+    useRef(null);
+
+  /* Sync transform */
   useEffect(() => {
     if (!target) return;
-    target.position.set(...item.position);
-    target.rotation.set(...item.rotation);
-    target.scale.set(...item.scale);
-  }, [target, item.position, item.rotation, item.scale]);
 
-  // Hook up TransformControls events and lock OrbitControls
+    target.position.set(
+      ...item.position
+    );
+
+    target.rotation.set(
+      ...item.rotation
+    );
+
+    target.scale.set(
+      ...item.scale
+    );
+  }, [
+    target,
+    item.position,
+    item.rotation,
+    item.scale,
+  ]);
+
+  /* TransformControls */
   useEffect(() => {
-    const controls = transformRef.current;
-    const orbitControls = orbitControlsRef?.current;
+    const controls =
+      transformRef.current;
+
+    const orbitControls =
+      orbitControlsRef?.current;
+
     if (!controls) return;
 
-    const handleDraggingChanged = (event) => {
-      const isDragging = Boolean(event.value);
-      setCameraLocked(isDragging);
+    const handleDraggingChanged = (
+      event
+    ) => {
+      const isDragging =
+        Boolean(event.value);
+
+      setCameraLocked(
+        isDragging
+      );
 
       if (orbitControls) {
-        orbitControls.enabled = !isDragging;
+        orbitControls.enabled =
+          !isDragging;
       }
 
-      // When drag ends, persist the updated transform to React state
-      if (!isDragging && target) {
-        const p = target.position;
-        const r = target.rotation;
-        const s = target.scale;
+      if (
+        !isDragging &&
+        target
+      ) {
+        const p =
+          target.position;
 
-        onUpdateTransform(item.id, {
-          position: [p.x, p.y, p.z],
-          rotation: [r.x, r.y, r.z],
-          scale: [s.x, s.y, s.z],
-        });
+        const r =
+          target.rotation;
+
+        const s =
+          target.scale;
+
+        onUpdateTransform(
+          item.id,
+          {
+            position: [
+              p.x,
+              p.y,
+              p.z,
+            ],
+
+            rotation: [
+              r.x,
+              r.y,
+              r.z,
+            ],
+
+            scale: [
+              s.x,
+              s.y,
+              s.z,
+            ],
+          }
+        );
       }
     };
 
-    const handleObjectChange = () => {
-      if (target) {
-        const p = target.position;
-        // Restrict furniture to interior bounds and floor level
-        p.x = THREE.MathUtils.clamp(
-          p.x,
-          -BOUNDS.HALF_WIDTH,
-          BOUNDS.HALF_WIDTH
-        );
-        p.z = THREE.MathUtils.clamp(
-          p.z,
-          -BOUNDS.HALF_LENGTH,
-          BOUNDS.HALF_LENGTH
-        );
-        p.y = Math.max(0, p.y);
-      }
-    };
+    const handleObjectChange =
+      () => {
+        if (!target) return;
 
-    controls.addEventListener("dragging-changed", handleDraggingChanged);
-    controls.addEventListener("objectChange", handleObjectChange);
+        const p =
+          target.position;
+
+        p.x =
+          THREE.MathUtils.clamp(
+            p.x,
+            -BOUNDS.HALF_WIDTH,
+            BOUNDS.HALF_WIDTH
+          );
+
+        p.z =
+          THREE.MathUtils.clamp(
+            p.z,
+            -BOUNDS.HALF_LENGTH,
+            BOUNDS.HALF_LENGTH
+          );
+
+        p.y =
+          Math.max(
+            0,
+            p.y
+          );
+      };
+
+    controls.addEventListener(
+      "dragging-changed",
+      handleDraggingChanged
+    );
+
+    controls.addEventListener(
+      "objectChange",
+      handleObjectChange
+    );
 
     return () => {
       controls.removeEventListener(
         "dragging-changed",
         handleDraggingChanged
       );
+
       controls.removeEventListener(
         "objectChange",
         handleObjectChange
       );
+
       setCameraLocked(false);
+
       if (orbitControls) {
         orbitControls.enabled = true;
       }
     };
-  }, [selected, target, item.id, onUpdateTransform, setCameraLocked, orbitControlsRef]);
+  }, [
+    selected,
+    target,
+    item.id,
+    onUpdateTransform,
+    setCameraLocked,
+    orbitControlsRef,
+  ]);
 
   return (
     <>
@@ -574,10 +960,13 @@ function FurnitureItem({
         scale={item.scale}
         onPointerDown={(event) => {
           event.stopPropagation();
+
           onSelect(item.id);
         }}
       >
-        {item.type === "sofa" && <SofaModel />}
+        {item.type === "sofa" && (
+          <SofaModel />
+        )}
       </group>
     </>
   );
@@ -592,14 +981,17 @@ function LoadingScreen() {
     <Html center>
       <div className="loading-box">
         <div className="loading-spinner" />
-        <span>Loading Architectural Scene...</span>
+
+        <span>
+          Loading Architectural Scene...
+        </span>
       </div>
     </Html>
   );
 }
 
 /* =========================================================
-   SCENE CONTAINER
+   SCENE
 ========================================================= */
 
 function Scene({
@@ -619,15 +1011,23 @@ function Scene({
   setSelectedWall,
   onUpdateFurnitureTransform,
 }) {
-  const orbitControlsRef = useRef(null);
+  const orbitControlsRef =
+    useRef(null);
 
   return (
     <Canvas
       shadows
       camera={{
-        position: [18, 14, 18],
+        position: [
+          18,
+          14,
+          18,
+        ],
+
         fov: 45,
+
         near: 0.1,
+
         far: 1000,
       }}
       gl={{
@@ -635,82 +1035,171 @@ function Scene({
         logarithmicDepthBuffer: true,
       }}
       onPointerMissed={() => {
-        if (!placementMode && !cameraLocked) {
-          setSelectedFurniture(null);
-          setSelectedWall(null);
+        if (
+          !placementMode &&
+          !cameraLocked
+        ) {
+          setSelectedFurniture(
+            null
+          );
+
+          setSelectedWall(
+            null
+          );
         }
       }}
     >
-      <color attach="background" args={["#101318"]} />
+      <color
+        attach="background"
+        args={[
+          "#101318",
+        ]}
+      />
 
-      <ambientLight intensity={1.5} />
-
-      <directionalLight
-        position={[12, 18, 20]}
-        intensity={2.8}
-        castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-bias={-0.0001}
+      <ambientLight
+        intensity={1.5}
       />
 
       <directionalLight
-        position={[-12, 10, -12]}
+        position={[
+          12,
+          18,
+          20,
+        ]}
+        intensity={2.8}
+        castShadow
+        shadow-mapSize-width={
+          2048
+        }
+        shadow-mapSize-height={
+          2048
+        }
+        shadow-bias={
+          -0.0001
+        }
+      />
+
+      <directionalLight
+        position={[
+          -12,
+          10,
+          -12,
+        ]}
         intensity={1.2}
       />
 
-      <Suspense fallback={<LoadingScreen />}>
-        {/* House Model with Wall Customization */}
+      <Suspense
+        fallback={
+          <LoadingScreen />
+        }
+      >
+
+        {/* HOUSE */}
         <HouseModel
-          wallColors={wallColors}
-          selectedWall={selectedWall}
-          onSelectWall={(name) => {
-            setSelectedWall(name);
-            setSelectedFurniture(null);
+          wallColors={
+            wallColors
+          }
+          selectedWall={
+            selectedWall
+          }
+          onSelectWall={(
+            name
+          ) => {
+            setSelectedWall(
+              name
+            );
+
+            setSelectedFurniture(
+              null
+            );
           }}
-          placementMode={placementMode}
+          placementMode={
+            placementMode
+          }
         />
 
-        {/* Furniture Items */}
-        {furniture.map((item) => (
-          <FurnitureItem
-            key={item.id}
-            item={item}
-            selected={selectedFurniture === item.id}
-            transformMode={transformMode}
-            onSelect={(id) => {
-              if (placementMode) return;
-              setSelectedFurniture(id);
-              setSelectedWall(null);
-            }}
-            onUpdateTransform={onUpdateFurnitureTransform}
-            setCameraLocked={setCameraLocked}
-            orbitControlsRef={orbitControlsRef}
-          />
-        ))}
+        {/* FURNITURE */}
+        {furniture.map(
+          (item) => (
+            <FurnitureItem
+              key={item.id}
+              item={item}
+              selected={
+                selectedFurniture ===
+                item.id
+              }
+              transformMode={
+                transformMode
+              }
+              onSelect={(id) => {
+                if (
+                  placementMode
+                ) {
+                  return;
+                }
 
-        {/* Ghost Sofa Preview */}
+                setSelectedFurniture(
+                  id
+                );
+
+                setSelectedWall(
+                  null
+                );
+              }}
+              onUpdateTransform={
+                onUpdateFurnitureTransform
+              }
+              setCameraLocked={
+                setCameraLocked
+              }
+              orbitControlsRef={
+                orbitControlsRef
+              }
+            />
+          )
+        )}
+
+        {/* GHOST SOFA */}
         <PlacementPreview
-          active={placementMode}
-          position={previewPosition}
+          active={
+            placementMode
+          }
+          position={
+            previewPosition
+          }
         />
 
-        {/* Floor Raycasting Plane */}
+        {/* FLOOR PLANE */}
         <PlacementSurface
-          placementMode={placementMode}
-          onFloorHover={onFloorHover}
-          onMove={setPreviewPosition}
-          onRegisterCamera={onRegisterCamera}
+          placementMode={
+            placementMode
+          }
+          onFloorHover={
+            onFloorHover
+          }
+          onMove={
+            setPreviewPosition
+          }
+          onRegisterCamera={
+            onRegisterCamera
+          }
         />
 
-        <Environment preset="city" />
+        <Environment
+          preset="city"
+        />
       </Suspense>
 
-      {/* 360° OrbitControls */}
+      {/* 360 CAMERA */}
       <OrbitControls
-        ref={orbitControlsRef}
+        ref={
+          orbitControlsRef
+        }
         makeDefault
-        enabled={!cameraLocked && !placementMode}
+        enabled={
+          !cameraLocked &&
+          !placementMode
+        }
         enableDamping
         dampingFactor={0.08}
         rotateSpeed={0.6}
@@ -722,10 +1211,15 @@ function Scene({
         minDistance={1.5}
         maxDistance={120}
         minPolarAngle={0.01}
-        maxPolarAngle={Math.PI - 0.05}
+        maxPolarAngle={
+          Math.PI - 0.05
+        }
         touches={{
-          ONE: THREE.TOUCH.ROTATE,
-          TWO: THREE.TOUCH.DOLLY_PAN,
+          ONE:
+            THREE.TOUCH.ROTATE,
+
+          TWO:
+            THREE.TOUCH.DOLLY_PAN,
         }}
       />
     </Canvas>
@@ -733,268 +1227,649 @@ function Scene({
 }
 
 /* =========================================================
-   MAIN APP COMPONENT
+   MAIN APP
 ========================================================= */
 
 export default function App() {
-  const [placementMode, setPlacementMode] = useState(false);
-  const [previewPosition, setPreviewPosition] = useState([0, 0, 0]);
+  const [
+    placementMode,
+    setPlacementMode,
+  ] = useState(false);
 
-  const lastFloorPosRef = useRef(null);
-  const cameraRef = useRef(null);
+  const [
+    previewPosition,
+    setPreviewPosition,
+  ] = useState([
+    0,
+    0,
+    0,
+  ]);
 
-  const [furniture, setFurniture] = useState([]);
-  const [selectedFurniture, setSelectedFurniture] = useState(null);
-  const [transformMode, setTransformMode] = useState("translate");
-  const [cameraLocked, setCameraLocked] = useState(false);
+  const lastFloorPosRef =
+    useRef(null);
 
-  const [selectedWall, setSelectedWall] = useState(null);
-  const [wallColors, setWallColors] = useState({});
+  const cameraRef =
+    useRef(null);
 
-  const handleFloorHover = useCallback((pos) => {
-    lastFloorPosRef.current = pos;
-  }, []);
+  const [
+    furniture,
+    setFurniture,
+  ] = useState([]);
 
-  const handleRegisterCamera = useCallback((camera) => {
-    cameraRef.current = camera;
-  }, []);
+  const [
+    selectedFurniture,
+    setSelectedFurniture,
+  ] = useState(null);
 
-  /* --- Placement Handlers --- */
+  const [
+    transformMode,
+    setTransformMode,
+  ] = useState(
+    "translate"
+  );
 
-  const startSofaPlacement = () => {
-    setSelectedFurniture(null);
-    setSelectedWall(null);
+  const [
+    cameraLocked,
+    setCameraLocked,
+  ] = useState(false);
 
-    // 1. If we have a recent valid floor position, use it
-    let initialPos = lastFloorPosRef.current;
+  const [
+    selectedWall,
+    setSelectedWall,
+  ] = useState(null);
 
-    // 2. If no floor position tracked yet, raycast camera view center to interior floor plane
-    if (!initialPos && cameraRef.current) {
-      initialPos = getCameraFloorIntersection(cameraRef.current);
-    }
+  const [
+    wallColors,
+    setWallColors,
+  ] = useState({});
 
-    if (!initialPos) {
-      initialPos = [0, 0, 0];
-    }
+  /* =======================================================
+     FLOOR TRACKING
+  ======================================================= */
 
-    lastFloorPosRef.current = initialPos;
-    setPreviewPosition(initialPos);
-    setPlacementMode(true);
-  };
+  const handleFloorHover =
+    useCallback(
+      (pos) => {
+        lastFloorPosRef.current =
+          pos;
+      },
+      []
+    );
 
-  const addSofa = () => {
-    if (!placementMode) return;
-    const newSofa = {
-      id: `sofa-${Date.now()}`,
-      type: "sofa",
-      position: [...previewPosition],
-      rotation: [0, 0, 0],
-      scale: [1, 1, 1],
+  const handleRegisterCamera =
+    useCallback(
+      (camera) => {
+        cameraRef.current =
+          camera;
+      },
+      []
+    );
+
+  /* =======================================================
+     SOFA PLACEMENT
+  ======================================================= */
+
+  const startSofaPlacement =
+    () => {
+      setSelectedFurniture(
+        null
+      );
+
+      setSelectedWall(
+        null
+      );
+
+      let initialPos =
+        lastFloorPosRef.current;
+
+      if (
+        !initialPos &&
+        cameraRef.current
+      ) {
+        initialPos =
+          getCameraFloorIntersection(
+            cameraRef.current
+          );
+      }
+
+      if (!initialPos) {
+        initialPos = [
+          0,
+          0,
+          0,
+        ];
+      }
+
+      lastFloorPosRef.current =
+        initialPos;
+
+      setPreviewPosition(
+        initialPos
+      );
+
+      setPlacementMode(
+        true
+      );
     };
 
-    setFurniture((prev) => [...prev, newSofa]);
-    setPlacementMode(false);
-    setCameraLocked(false);
-    setSelectedFurniture(newSofa.id);
-    setSelectedWall(null);
-    setTransformMode("translate");
-  };
+  const addSofa = () => {
+    if (!placementMode) {
+      return;
+    }
 
-  const cancelPlacement = useCallback(() => {
-    setPlacementMode(false);
-    setCameraLocked(false);
-  }, []);
+    const newSofa = {
+      id: `sofa-${Date.now()}`,
 
-  /* --- Furniture Actions --- */
+      type: "sofa",
 
-  const updateFurnitureTransform = useCallback((id, newTransform) => {
-    setFurniture((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, ...newTransform } : item
-      )
+      position: [
+        ...previewPosition,
+      ],
+
+      rotation: [
+        0,
+        0,
+        0,
+      ],
+
+      scale: [
+        1,
+        1,
+        1,
+      ],
+    };
+
+    setFurniture(
+      (prev) => [
+        ...prev,
+        newSofa,
+      ]
     );
-  }, []);
 
-  const deleteFurniture = useCallback(() => {
-    if (!selectedFurniture) return;
-    setFurniture((prev) =>
-      prev.filter((item) => item.id !== selectedFurniture)
+    setPlacementMode(
+      false
     );
-    setSelectedFurniture(null);
-  }, [selectedFurniture]);
 
-  /* --- Wall Customization Actions --- */
+    setCameraLocked(
+      false
+    );
 
-  const handleWallColorChange = (color) => {
-    if (!selectedWall) return;
-    setWallColors((prev) => ({
-      ...prev,
-      [selectedWall]: color,
-    }));
+    setSelectedFurniture(
+      newSofa.id
+    );
+
+    setSelectedWall(
+      null
+    );
+
+    setTransformMode(
+      "translate"
+    );
   };
 
-  const handleResetWallColor = () => {
-    if (!selectedWall) return;
-    setWallColors((prev) => {
-      const updated = { ...prev };
-      delete updated[selectedWall];
-      return updated;
-    });
-  };
+  const cancelPlacement =
+    useCallback(
+      () => {
+        setPlacementMode(
+          false
+        );
 
-  /* --- Keyboard Shortcuts --- */
+        setCameraLocked(
+          false
+        );
+      },
+      []
+    );
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Ignore when typing inside input fields
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
+  /* =======================================================
+     FURNITURE TRANSFORM
+  ======================================================= */
+
+  const updateFurnitureTransform =
+    useCallback(
+      (
+        id,
+        newTransform
+      ) => {
+        setFurniture(
+          (prev) =>
+            prev.map(
+              (item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      ...newTransform,
+                    }
+                  : item
+            )
+        );
+      },
+      []
+    );
+
+  const deleteFurniture =
+    useCallback(
+      () => {
+        if (
+          !selectedFurniture
+        ) {
+          return;
+        }
+
+        setFurniture(
+          (prev) =>
+            prev.filter(
+              (item) =>
+                item.id !==
+                selectedFurniture
+            )
+        );
+
+        setSelectedFurniture(
+          null
+        );
+      },
+      [selectedFurniture]
+    );
+
+  /* =======================================================
+     WALL COLOR
+  ======================================================= */
+
+  const handleWallColorChange =
+    (color) => {
+      if (!selectedWall) {
         return;
       }
 
-      if (e.key === "Escape") {
+      setWallColors(
+        (prev) => ({
+          ...prev,
+          [selectedWall]:
+            color,
+        })
+      );
+    };
+
+  const handleResetWallColor =
+    () => {
+      if (!selectedWall) {
+        return;
+      }
+
+      setWallColors(
+        (prev) => {
+          const updated = {
+            ...prev,
+          };
+
+          delete updated[
+            selectedWall
+          ];
+
+          return updated;
+        }
+      );
+    };
+
+  /* =======================================================
+     KEYBOARD SHORTCUTS
+  ======================================================= */
+
+  useEffect(() => {
+    const handleKeyDown = (
+      e
+    ) => {
+      if (
+        e.target.tagName ===
+          "INPUT" ||
+        e.target.tagName ===
+          "TEXTAREA"
+      ) {
+        return;
+      }
+
+      if (
+        e.key === "Escape"
+      ) {
         if (placementMode) {
           cancelPlacement();
         } else {
-          setSelectedFurniture(null);
-          setSelectedWall(null);
+          setSelectedFurniture(
+            null
+          );
+
+          setSelectedWall(
+            null
+          );
         }
-      } else if (e.key === "w" || e.key === "W" || e.key === "g" || e.key === "G") {
-        if (selectedFurniture) setTransformMode("translate");
-      } else if (e.key === "e" || e.key === "E" || e.key === "r" || e.key === "R") {
-        if (selectedFurniture) setTransformMode("rotate");
-      } else if (e.key === "s" || e.key === "S") {
-        if (selectedFurniture) setTransformMode("scale");
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedFurniture) deleteFurniture();
+      }
+
+      else if (
+        e.key === "w" ||
+        e.key === "W" ||
+        e.key === "g" ||
+        e.key === "G"
+      ) {
+        if (
+          selectedFurniture
+        ) {
+          setTransformMode(
+            "translate"
+          );
+        }
+      }
+
+      else if (
+        e.key === "e" ||
+        e.key === "E" ||
+        e.key === "r" ||
+        e.key === "R"
+      ) {
+        if (
+          selectedFurniture
+        ) {
+          setTransformMode(
+            "rotate"
+          );
+        }
+      }
+
+      else if (
+        e.key === "s" ||
+        e.key === "S"
+      ) {
+        if (
+          selectedFurniture
+        ) {
+          setTransformMode(
+            "scale"
+          );
+        }
+      }
+
+      else if (
+        e.key === "Delete" ||
+        e.key === "Backspace"
+      ) {
+        if (
+          selectedFurniture
+        ) {
+          deleteFurniture();
+        }
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [placementMode, selectedFurniture, cancelPlacement, deleteFurniture]);
+    window.addEventListener(
+      "keydown",
+      handleKeyDown
+    );
+
+    return () =>
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+  }, [
+    placementMode,
+    selectedFurniture,
+    cancelPlacement,
+    deleteFurniture,
+  ]);
+
+  /* =======================================================
+     UI
+  ======================================================= */
 
   return (
     <div className="app">
-      {/* Top Header */}
+
+      {/* TOP BAR */}
       <header className="topbar">
+
         <div className="brand">
-          <div className="brand-icon">3D</div>
+
+          <div className="brand-icon">
+            3D
+          </div>
+
           <div>
-            <div className="brand-title">House Viewer</div>
+            <div className="brand-title">
+              House Viewer
+            </div>
+
             <div className="brand-subtitle">
-              360° Architectural Editor
+              360° Architectural
+              Editor
             </div>
           </div>
+
         </div>
 
         <div className="topbar-right">
+
           <div className="status">
             <span className="status-dot" />
-            <span>Ready</span>
+            <span>
+              Ready
+            </span>
           </div>
+
         </div>
+
       </header>
 
-      {/* Main 3D Canvas Area */}
+      {/* VIEWER */}
       <main className="viewer">
+
         <Scene
           furniture={furniture}
-          selectedFurniture={selectedFurniture}
-          setSelectedFurniture={setSelectedFurniture}
-          transformMode={transformMode}
-          placementMode={placementMode}
-          previewPosition={previewPosition}
-          setPreviewPosition={setPreviewPosition}
-          onFloorHover={handleFloorHover}
-          onRegisterCamera={handleRegisterCamera}
-          cameraLocked={cameraLocked}
-          setCameraLocked={setCameraLocked}
-          wallColors={wallColors}
-          selectedWall={selectedWall}
-          setSelectedWall={setSelectedWall}
-          onUpdateFurnitureTransform={updateFurnitureTransform}
+          selectedFurniture={
+            selectedFurniture
+          }
+          setSelectedFurniture={
+            setSelectedFurniture
+          }
+          transformMode={
+            transformMode
+          }
+          placementMode={
+            placementMode
+          }
+          previewPosition={
+            previewPosition
+          }
+          setPreviewPosition={
+            setPreviewPosition
+          }
+          onFloorHover={
+            handleFloorHover
+          }
+          onRegisterCamera={
+            handleRegisterCamera
+          }
+          cameraLocked={
+            cameraLocked
+          }
+          setCameraLocked={
+            setCameraLocked
+          }
+          wallColors={
+            wallColors
+          }
+          selectedWall={
+            selectedWall
+          }
+          setSelectedWall={
+            setSelectedWall
+          }
+          onUpdateFurnitureTransform={
+            updateFurnitureTransform
+          }
         />
 
-        {/* 360° Edit Mode Badge */}
+        {/* EDIT BADGE */}
         <div className="mode-badge">
+
           <span className="badge-dot" />
-          <span>360° EDIT</span>
+
+          <span>
+            360° EDIT
+          </span>
+
         </div>
 
-        {/* Wall Customization Panel (shown when a wall is clicked) */}
+        {/* =================================================
+            WALL CUSTOMIZATION PANEL
+        ================================================= */}
+
         {selectedWall && (
           <div
             className="wall-panel"
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerMove={(e) => e.stopPropagation()}
+            onPointerDown={(e) =>
+              e.stopPropagation()
+            }
+            onPointerMove={(e) =>
+              e.stopPropagation()
+            }
           >
+
             <div className="wall-panel-header">
+
               <div className="wall-title-area">
-                <span className="wall-panel-label">Wall Customization</span>
-                <span className="wall-panel-name">
-                  {formatWallName(selectedWall)}
+
+                <span className="wall-panel-label">
+                  Wall Customization
                 </span>
+
+                <span className="wall-panel-name">
+                  {formatWallName(
+                    selectedWall
+                  )}
+                </span>
+
               </div>
+
               <button
                 className="close-btn"
                 title="Deselect Wall"
-                onClick={() => setSelectedWall(null)}
+                onClick={() =>
+                  setSelectedWall(
+                    null
+                  )
+                }
               >
                 ✕
               </button>
+
             </div>
 
-            <div className="palette-section-title">Color Palette</div>
+            <div className="palette-section-title">
+              Color Palette
+            </div>
+
             <div className="color-swatches-grid">
-              {WALL_PALETTE.map((item) => (
-                <button
-                  key={item.color}
-                  className={`color-swatch-btn ${
-                    wallColors[selectedWall] === item.color ? "active" : ""
-                  }`}
-                  style={{ backgroundColor: item.color }}
-                  title={item.name}
-                  onClick={() => handleWallColorChange(item.color)}
-                />
-              ))}
+
+              {WALL_PALETTE.map(
+                (item) => (
+                  <button
+                    key={
+                      item.color
+                    }
+                    className={`color-swatch-btn ${
+                      wallColors[
+                        selectedWall
+                      ] ===
+                      item.color
+                        ? "active"
+                        : ""
+                    }`}
+                    style={{
+                      backgroundColor:
+                        item.color,
+                    }}
+                    title={
+                      item.name
+                    }
+                    onClick={() =>
+                      handleWallColorChange(
+                        item.color
+                      )
+                    }
+                  />
+                )
+              )}
+
             </div>
 
             <div className="custom-color-row">
+
               <div className="custom-color-label">
-                <span>Custom:</span>
+
+                <span>
+                  Custom:
+                </span>
+
                 <input
                   type="color"
                   className="color-picker-input"
-                  value={wallColors[selectedWall] || "#ffffff"}
-                  onChange={(e) => handleWallColorChange(e.target.value)}
+                  value={
+                    wallColors[
+                      selectedWall
+                    ] ||
+                    "#ffffff"
+                  }
+                  onChange={(e) =>
+                    handleWallColorChange(
+                      e.target.value
+                    )
+                  }
                 />
+
               </div>
 
               <button
                 className="reset-wall-btn"
-                onClick={handleResetWallColor}
+                onClick={
+                  handleResetWallColor
+                }
               >
                 Reset Default
               </button>
+
             </div>
+
           </div>
         )}
 
-        {/* Placement Mode Banner */}
+        {/* =================================================
+            PLACEMENT BANNER
+        ================================================= */}
+
         {placementMode && (
           <div className="placement-banner">
-            <span>📍 Move cursor/finger over floor to position ghost sofa</span>
+            <span>
+              📍 Move cursor/finger
+              over floor to
+              position ghost sofa
+            </span>
           </div>
         )}
 
-        {/* Floating Toolbar */}
+        {/* =================================================
+            FLOATING TOOLBAR
+        ================================================= */}
+
         <div className="editor-toolbar">
+
           {!placementMode && (
             <>
               <button
                 type="button"
                 className="primary-add"
-                onClick={startSofaPlacement}
+                onClick={
+                  startSofaPlacement
+                }
               >
                 + Sofa
               </button>
@@ -1003,12 +1878,23 @@ export default function App() {
                 <>
                   <div className="toolbar-divider" />
 
-                  <span className="selected-item-tag">Sofa Selected</span>
+                  <span className="selected-item-tag">
+                    Sofa Selected
+                  </span>
 
                   <button
                     type="button"
-                    className={transformMode === "translate" ? "active" : ""}
-                    onClick={() => setTransformMode("translate")}
+                    className={
+                      transformMode ===
+                      "translate"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setTransformMode(
+                        "translate"
+                      )
+                    }
                     title="Translate (W)"
                   >
                     Move
@@ -1016,8 +1902,17 @@ export default function App() {
 
                   <button
                     type="button"
-                    className={transformMode === "rotate" ? "active" : ""}
-                    onClick={() => setTransformMode("rotate")}
+                    className={
+                      transformMode ===
+                      "rotate"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setTransformMode(
+                        "rotate"
+                      )
+                    }
                     title="Rotate (E)"
                   >
                     Rotate
@@ -1025,8 +1920,17 @@ export default function App() {
 
                   <button
                     type="button"
-                    className={transformMode === "scale" ? "active" : ""}
-                    onClick={() => setTransformMode("scale")}
+                    className={
+                      transformMode ===
+                      "scale"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setTransformMode(
+                        "scale"
+                      )
+                    }
                     title="Scale (S)"
                   >
                     Scale
@@ -1035,7 +1939,9 @@ export default function App() {
                   <button
                     type="button"
                     className="danger"
-                    onClick={deleteFurniture}
+                    onClick={
+                      deleteFurniture
+                    }
                     title="Delete (Del)"
                   >
                     Delete
@@ -1043,7 +1949,11 @@ export default function App() {
 
                   <button
                     type="button"
-                    onClick={() => setSelectedFurniture(null)}
+                    onClick={() =>
+                      setSelectedFurniture(
+                        null
+                      )
+                    }
                     title="Deselect (Esc)"
                   >
                     ✕
@@ -1060,6 +1970,7 @@ export default function App() {
                 className="add-btn-cta"
                 onClick={(e) => {
                   e.stopPropagation();
+
                   addSofa();
                 }}
               >
@@ -1070,6 +1981,7 @@ export default function App() {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+
                   cancelPlacement();
                 }}
               >
@@ -1077,23 +1989,45 @@ export default function App() {
               </button>
             </>
           )}
+
         </div>
 
-        {/* Navigation Help Bar */}
+        {/* =================================================
+            NAVIGATION HELP
+        ================================================= */}
+
         <div className="navigation-help">
+
           <div className="nav-item">
-            <span>Left Drag:</span> 360° Rotate
+            <span>
+              Left Drag:
+            </span>{" "}
+            360° Rotate
           </div>
+
           <div className="nav-item">
-            <span>Scroll / Pinch:</span> Zoom
+            <span>
+              Scroll / Pinch:
+            </span>{" "}
+            Zoom
           </div>
+
           <div className="nav-item">
-            <span>Right Drag:</span> Pan
+            <span>
+              Right Drag:
+            </span>{" "}
+            Pan
           </div>
+
           <div className="nav-item">
-            <span>Wall / Sofa:</span> Click to Edit
+            <span>
+              Wall / Sofa:
+            </span>{" "}
+            Click to Edit
           </div>
+
         </div>
+
       </main>
     </div>
   );

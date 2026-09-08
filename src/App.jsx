@@ -1,7 +1,3 @@
-import * as THREE from "three";
-import {
-  getFurnitureDefinition,
-} from "./data/furnitureLibrary";
 import React, {
   Suspense,
   useCallback,
@@ -23,8 +19,11 @@ import {
 
 import * as THREE from "three";
 
-import "./App.css";
+import {
+  getFurnitureDefinition,
+} from "./data/furnitureLibrary";
 
+import "./App.css";
 /* =========================================================
    CONSTANTS & BOUNDS
 ========================================================= */

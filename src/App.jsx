@@ -534,7 +534,10 @@ function PlacementPreview({
   return (
     <group position={position}>
 
-      <SofaModel ghost />
+      <FurnitureModel
+  type="sofa"
+  ghost
+/>
 
       {/* Floor ring */}
       <mesh

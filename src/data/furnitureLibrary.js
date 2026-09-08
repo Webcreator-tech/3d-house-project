@@ -3,7 +3,7 @@ export const FURNITURE_LIBRARY = [
     id: "sofa",
     name: "Sofa",
     modelPath: "/models/furniture/sofa_02.glb",
-    defaultScale: [0.0015, 0.0015, 0.0015],
+    defaultScale: [0.00015, 0.00015, 0.00015],
   },
 
   {

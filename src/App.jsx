@@ -498,13 +498,42 @@ function FurnitureModel({
      * Automatically place the model's bottom
      * on the floor.
      */
-   const box =
+   /*
+ * Apply furniture scale BEFORE calculating
+ * the final bounding box.
+ */
+cloned.scale.set(
+  ...definition.defaultScale
+);
+
+cloned.updateMatrixWorld(true);
+
+/*
+ * Normalize the model:
+ * - center X
+ * - put bottom on Y = 0
+ * - center Z
+ */
+const box =
   new THREE.Box3().setFromObject(
     cloned
   );
 
-cloned.position.y =
-  -box.min.y;
+const center =
+  box.getCenter(
+    new THREE.Vector3()
+  );
+
+cloned.position.x -=
+  center.x;
+
+cloned.position.y -=
+  box.min.y;
+
+cloned.position.z -=
+  center.z;
+
+cloned.updateMatrixWorld(true);
 
 return cloned;
   }, [
@@ -512,13 +541,9 @@ return cloned;
     ghost,
   ]);
 
-  return (
-    <primitive
-      object={model}
-      scale={
-        definition.defaultScale
-      }
-    />
+  <primitive
+  object={model}
+/>
   );
 }
 /* =========================================================
@@ -1212,6 +1237,7 @@ export default function App() {
     selectedFurniture,
     setSelectedFurniture,
   ] = useState(null);
+
 
   const [
     transformMode,

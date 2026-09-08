@@ -5,6 +5,13 @@ export const FURNITURE_LIBRARY = [
     modelPath: "/models/furniture/sofa_02.glb",
     defaultScale: [1, 1, 1],
   },
+
+  {
+    id: "tv",
+    name: "TV",
+    modelPath: "/models/furniture/wall_flat_tv.glb",
+    defaultScale: [1, 1, 1],
+  },
 ];
 
 export function getFurnitureDefinition(id) {

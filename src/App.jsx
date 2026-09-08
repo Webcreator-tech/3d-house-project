@@ -498,15 +498,15 @@ function FurnitureModel({
      * Automatically place the model's bottom
      * on the floor.
      */
-    const box =
-      new THREE.Box3().setFromObject(
-        cloned
-      );
+   const box =
+  new THREE.Box3().setFromObject(
+    cloned
+  );
 
-    cloned.position.y =
-      -box.min.y;
+cloned.position.y =
+  -box.min.y;
 
-    return cloned;
+return cloned;
   }, [
     scene,
     ghost,

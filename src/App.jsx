@@ -1,4 +1,7 @@
 import * as THREE from "three";
+import {
+  getFurnitureDefinition,
+} from "./data/furnitureLibrary";
 import React, {
   Suspense,
   useCallback,

@@ -1,1 +1,16 @@
+export const FURNITURE_LIBRARY = [
+  {
+    id: "sofa",
+    name: "Sofa",
+    modelPath: "/models/furniture/sofa_02.glb",
+    defaultScale: [1, 1, 1],
+  },
+];
 
+export function getFurnitureDefinition(id) {
+  return (
+    FURNITURE_LIBRARY.find(
+      (item) => item.id === id
+    ) || null
+  );
+}

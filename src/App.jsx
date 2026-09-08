@@ -911,9 +911,9 @@ function FurnitureItem({
           onSelect(item.id);
         }}
       >
-        {item.type === "sofa" && (
-          <SofaModel />
-        )}
+        <FurnitureModel
+  type={item.type}
+/>
       </group>
     </>
   );

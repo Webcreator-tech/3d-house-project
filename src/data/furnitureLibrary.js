@@ -10,7 +10,7 @@ export const FURNITURE_LIBRARY = [
     id: "tv",
     name: "TV",
     modelPath: "/models/furniture/wall_flat_tv.glb",
-    defaultScale: [0.00015, 0.00015, 0.00015],
+    defaultScale: [0.0015, 0.0015, 0.0015],
   },
 ];
 

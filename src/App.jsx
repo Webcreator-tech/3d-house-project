@@ -415,172 +415,113 @@ useGLTF.preload(
 );
 
 /* =========================================================
-   TEMPORARY SOFA
+   GENERIC GLB FURNITURE MODEL
 ========================================================= */
 
-function SofaModel({ ghost = false }) {
-  const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: ghost
-          ? "#38bdf8"
-          : "#6b7280",
+function FurnitureModel({
+  type,
+  ghost = false,
+}) {
+  const definition =
+    getFurnitureDefinition(type);
 
-        transparent: ghost,
+  if (!definition) {
+    return null;
+  }
 
-        opacity: ghost
-          ? 0.45
-          : 1,
+  const { scene } =
+    useGLTF(
+      definition.modelPath
+    );
 
-        roughness: 0.8,
-      }),
-    [ghost]
-  );
+  const model = useMemo(() => {
+    const cloned =
+      scene.clone(true);
 
-  const darkMaterial = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: ghost
-          ? "#0284c7"
-          : "#374151",
+    /*
+     * Make materials independent.
+     * This prevents ghost mode from changing
+     * the normal placed model.
+     */
+    cloned.traverse((child) => {
+      if (!child.isMesh) return;
 
-        transparent: ghost,
+      child.castShadow = !ghost;
+      child.receiveShadow = !ghost;
 
-        opacity: ghost
-          ? 0.4
-          : 1,
+      if (Array.isArray(child.material)) {
+        child.material =
+          child.material.map((material) => {
+            const clonedMaterial =
+              material.clone();
 
-        roughness: 0.85,
-      }),
-    [ghost]
-  );
+            if (ghost) {
+              clonedMaterial.transparent =
+                true;
+
+              clonedMaterial.opacity =
+                0.45;
+
+              clonedMaterial.depthWrite =
+                false;
+            }
+
+            return clonedMaterial;
+          });
+      } else if (child.material) {
+        const clonedMaterial =
+          child.material.clone();
+
+        if (ghost) {
+          clonedMaterial.transparent =
+            true;
+
+          clonedMaterial.opacity =
+            0.45;
+
+          clonedMaterial.depthWrite =
+            false;
+        }
+
+        child.material =
+          clonedMaterial;
+      }
+
+      /*
+       * Ghost should not block floor raycasting.
+       */
+      if (ghost) {
+        child.raycast = () => null;
+      }
+    });
+
+    /*
+     * Automatically place the model's bottom
+     * on the floor.
+     */
+    const box =
+      new THREE.Box3().setFromObject(
+        cloned
+      );
+
+    cloned.position.y =
+      -box.min.y;
+
+    return cloned;
+  }, [
+    scene,
+    ghost,
+  ]);
 
   return (
-    <group>
-
-      {/* Seat */}
-      <mesh
-        position={[0, 0.65, 0]}
-        material={material}
-        castShadow={!ghost}
-        raycast={
-          ghost
-            ? () => null
-            : undefined
-        }
-      >
-        <boxGeometry
-          args={[
-            3.2,
-            0.7,
-            1.35,
-          ]}
-        />
-      </mesh>
-
-      {/* Back */}
-      <mesh
-        position={[
-          0,
-          1.45,
-          -0.52,
-        ]}
-        material={material}
-        castShadow={!ghost}
-        raycast={
-          ghost
-            ? () => null
-            : undefined
-        }
-      >
-        <boxGeometry
-          args={[
-            3.2,
-            1.35,
-            0.35,
-          ]}
-        />
-      </mesh>
-
-      {/* Left arm */}
-      <mesh
-        position={[
-          -1.48,
-          1.0,
-          0,
-        ]}
-        material={material}
-        castShadow={!ghost}
-        raycast={
-          ghost
-            ? () => null
-            : undefined
-        }
-      >
-        <boxGeometry
-          args={[
-            0.3,
-            0.85,
-            1.4,
-          ]}
-        />
-      </mesh>
-
-      {/* Right arm */}
-      <mesh
-        position={[
-          1.48,
-          1.0,
-          0,
-        ]}
-        material={material}
-        castShadow={!ghost}
-        raycast={
-          ghost
-            ? () => null
-            : undefined
-        }
-      >
-        <boxGeometry
-          args={[
-            0.3,
-            0.85,
-            1.4,
-          ]}
-        />
-      </mesh>
-
-      {/* Legs */}
-      {[
-        [-1.15, 0.25, -0.45],
-        [1.15, 0.25, -0.45],
-        [-1.15, 0.25, 0.45],
-        [1.15, 0.25, 0.45],
-      ].map((pos, i) => (
-        <mesh
-          key={i}
-          position={pos}
-          material={darkMaterial}
-          castShadow={!ghost}
-          raycast={
-            ghost
-              ? () => null
-              : undefined
-          }
-        >
-          <boxGeometry
-            args={[
-              0.16,
-              0.5,
-              0.16,
-            ]}
-          />
-        </mesh>
-      ))}
-    </group>
+    <primitive
+      object={model}
+      scale={
+        definition.defaultScale
+      }
+    />
   );
 }
-
 /* =========================================================
    PLACEMENT PREVIEW
 ========================================================= */

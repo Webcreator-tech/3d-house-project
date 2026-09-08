@@ -528,6 +528,7 @@ function FurnitureModel({
 function PlacementPreview({
   active,
   position,
+  furnitureType,
 }) {
   if (!active) return null;
 
@@ -535,7 +536,7 @@ function PlacementPreview({
     <group position={position}>
 
       <FurnitureModel
-  type="sofa"
+  type={furnitureType}
   ghost
 />
 
@@ -947,6 +948,7 @@ function Scene({
   setSelectedFurniture,
   transformMode,
   placementMode,
+  placementFurnitureType,
   previewPosition,
   setPreviewPosition,
   onFloorHover,
@@ -1182,7 +1184,10 @@ export default function App() {
     placementMode,
     setPlacementMode,
   ] = useState(false);
-
+  const [
+  placementFurnitureType,
+  setPlacementFurnitureType,
+] = useState("sofa");
   const [
     previewPosition,
     setPreviewPosition,
@@ -1256,8 +1261,11 @@ export default function App() {
      SOFA PLACEMENT
   ======================================================= */
 
-  const startSofaPlacement =
-    () => {
+  const startFurniturePlacement =
+  (furnitureType) => {  
+    setPlacementFurnitureType(
+  furnitureType
+);
       setSelectedFurniture(
         null
       );
@@ -1299,15 +1307,15 @@ export default function App() {
       );
     };
 
-  const addSofa = () => {
+ const addFurniture = () => {
     if (!placementMode) {
       return;
     }
 
-    const newSofa = {
-      id: `sofa-${Date.now()}`,
+    const newFurniture = {
+  id: `${placementFurnitureType}-${Date.now()}`,
 
-      type: "sofa",
+  type: placementFurnitureType,
 
       position: [
         ...previewPosition,
@@ -1329,7 +1337,7 @@ export default function App() {
     setFurniture(
       (prev) => [
         ...prev,
-        newSofa,
+        newFurniture,
       ]
     );
 
@@ -1342,8 +1350,8 @@ export default function App() {
     );
 
     setSelectedFurniture(
-      newSofa.id
-    );
+  newFurniture.id
+);
 
     setSelectedWall(
       null
@@ -1623,6 +1631,9 @@ export default function App() {
           placementMode={
             placementMode
           }
+          placementFurnitureType={
+            placementFurnitureType
+          }
           previewPosition={
             previewPosition
           }
@@ -1795,11 +1806,11 @@ export default function App() {
 
         {placementMode && (
           <div className="placement-banner">
-            <span>
-              📍 Move cursor/finger
-              over floor to
-              position ghost sofa
-            </span>
+           <span>
+  📍 Move cursor/finger
+  over floor to
+  position ghost furniture
+</span>
           </div>
         )}
 
@@ -1812,22 +1823,32 @@ export default function App() {
           {!placementMode && (
             <>
               <button
-                type="button"
-                className="primary-add"
-                onClick={
-                  startSofaPlacement
-                }
-              >
-                + Sofa
-              </button>
+  type="button"
+  className="primary-add"
+  onClick={() =>
+    startFurniturePlacement("sofa")
+  }
+>
+  + Sofa
+</button>
+
+<button
+  type="button"
+  className="primary-add"
+  onClick={() =>
+    startFurniturePlacement("tv")
+  }
+>
+  + TV
+</button>
 
               {selectedFurniture && (
                 <>
                   <div className="toolbar-divider" />
 
-                  <span className="selected-item-tag">
-                    Sofa Selected
-                  </span>
+                 <span className="selected-item-tag">
+  Furniture Selected
+</span>
 
                   <button
                     type="button"
@@ -1918,10 +1939,10 @@ export default function App() {
                 onClick={(e) => {
                   e.stopPropagation();
 
-                  addSofa();
+                  addFurniture();
                 }}
               >
-                ✓ ADD SOFA
+               ✓ ADD FURNITURE
               </button>
 
               <button

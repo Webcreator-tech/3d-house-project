@@ -527,7 +527,7 @@ function FurnitureModel({
   ghost,
   definition.defaultScale,
 ]);
-
+return(
   <primitive
   object={model}
 />

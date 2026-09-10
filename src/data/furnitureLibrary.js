@@ -11,7 +11,6 @@ export const FURNITURE_LIBRARY = [
     name: "TV",
     modelPath: "/models/furniture/wall_flat_tv.glb",
     defaultScale: [0.015, 0.015, 0.015],
-    positionOffset: [0, -4.3, 0],
   },
 ];
 

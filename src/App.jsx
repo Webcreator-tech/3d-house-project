@@ -434,112 +434,99 @@ function FurnitureModel({
     );
 
   const model = useMemo(() => {
-    const cloned =
-      scene.clone(true);
+  const cloned = scene.clone(true);
 
-    /*
-     * Make materials independent.
-     * This prevents ghost mode from changing
-     * the normal placed model.
-     */
-    cloned.traverse((child) => {
-      if (!child.isMesh) return;
+  /*
+   * Make materials independent.
+   */
+  cloned.traverse((child) => {
+    if (!child.isMesh) return;
 
-      child.castShadow = !ghost;
-      child.receiveShadow = !ghost;
+    child.castShadow = !ghost;
+    child.receiveShadow = !ghost;
 
-      if (Array.isArray(child.material)) {
-        child.material =
-          child.material.map((material) => {
-            const clonedMaterial =
-              material.clone();
+    if (Array.isArray(child.material)) {
+      child.material =
+        child.material.map((material) => {
+          const clonedMaterial =
+            material.clone();
 
-            if (ghost) {
-              clonedMaterial.transparent =
-                true;
+          if (ghost) {
+            clonedMaterial.transparent = true;
+            clonedMaterial.opacity = 0.45;
+            clonedMaterial.depthWrite = false;
+          }
 
-              clonedMaterial.opacity =
-                0.45;
+          return clonedMaterial;
+        });
+    } else if (child.material) {
+      const clonedMaterial =
+        child.material.clone();
 
-              clonedMaterial.depthWrite =
-                false;
-            }
-
-            return clonedMaterial;
-          });
-      } else if (child.material) {
-        const clonedMaterial =
-          child.material.clone();
-
-        if (ghost) {
-          clonedMaterial.transparent =
-            true;
-
-          clonedMaterial.opacity =
-            0.45;
-
-          clonedMaterial.depthWrite =
-            false;
-        }
-
-        child.material =
-          clonedMaterial;
-      }
-
-      /*
-       * Ghost should not block floor raycasting.
-       */
       if (ghost) {
-        child.raycast = () => null;
+        clonedMaterial.transparent = true;
+        clonedMaterial.opacity = 0.45;
+        clonedMaterial.depthWrite = false;
       }
-    });
 
-    /*
-     * Automatically place the model's bottom
-     * on the floor.
-     */
-   /*
- * Apply furniture scale BEFORE calculating
- * the final bounding box.
- */
-cloned.scale.set(
-  ...definition.defaultScale
-);
+      child.material = clonedMaterial;
+    }
 
-cloned.updateMatrixWorld(true);
+    if (ghost) {
+      child.raycast = () => null;
+    }
+  });
 
-/*
- * Normalize the model:
- * - center X
- * - put bottom on Y = 0
- * - center Z
- */
-const box =
-  new THREE.Box3().setFromObject(
-    cloned
+  /*
+   * Wrapper keeps the furniture's placement
+   * in WORLD coordinates, regardless of the
+   * GLB's internal rotation/origin.
+   */
+  const wrapper = new THREE.Group();
+
+  wrapper.add(cloned);
+
+  /*
+   * Apply furniture scale to the wrapper.
+   */
+  wrapper.scale.set(
+    ...definition.defaultScale
   );
 
-const center =
-  box.getCenter(
-    new THREE.Vector3()
+  wrapper.updateMatrixWorld(true);
+
+  /*
+   * Calculate the actual WORLD bounding box
+   * after scale and internal GLB transforms.
+   */
+  const box =
+    new THREE.Box3().setFromObject(
+      wrapper
+    );
+
+  const center =
+    box.getCenter(
+      new THREE.Vector3()
+    );
+
+  /*
+   * Center the furniture on X/Z
+   * and place its bottom exactly on floor Y=0.
+   */
+  wrapper.position.set(
+    -center.x,
+    -box.min.y,
+    -center.z
   );
 
-cloned.position.x -=
-  center.x;
+  wrapper.updateMatrixWorld(true);
 
-cloned.position.y -=
-  box.min.y;
-
-cloned.position.z -=
-  center.z;
-
-cloned.updateMatrixWorld(true);
-
-return cloned;
-  }, [
-    scene,
-    ghost,
-  ]);
+  return wrapper;
+}, [
+  scene,
+  ghost,
+  definition.defaultScale,
+]);
 
   <primitive
   object={model}
